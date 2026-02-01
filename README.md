@@ -1,6 +1,7 @@
 # Study-One
 
-Study-One is a full-stack study assistant app with a Next.js frontend and a FastAPI backend.  
+Socrato is a full-stack AI study assistant that turns raw notes into concise summaries and practice questions. Socrato's goal is to help students study faster and more effectively before quizzes or exams. It has a Next.js frontend and FastAPI backend. 
+
 
 ---
 
