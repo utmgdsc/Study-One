@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+
+# pytest
+.pytest_cache/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+pyrightconfig.json
