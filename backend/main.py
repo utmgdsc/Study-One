@@ -1,3 +1,5 @@
+import json
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
@@ -115,32 +117,65 @@ Return ONLY valid JSON, no markdown or extra text."""
     
     # Parse the JSON response from Gemini
     try:
-        import json
         # Clean up response if it has markdown code blocks
         cleaned = response.strip()
+        
+        # Remove opening markdown code fence (e.g., ```json or ```)
         if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1]  # Remove first line
+            if "\n" in cleaned:
+                # Normal case: ```json\n{...}
+                cleaned = cleaned.split("\n", 1)[1]
+            else:
+                # Edge case: no newline, just remove the backticks
+                cleaned = cleaned[3:]
+        
+        # Remove closing markdown code fence
         if cleaned.endswith("```"):
-            cleaned = cleaned.rsplit("```", 1)[0]  # Remove last ```
+            cleaned = cleaned[:-3]
+        
         cleaned = cleaned.strip()
         
         data = json.loads(cleaned)
         
+        # Validate required fields exist
+        if not isinstance(data.get("summary"), list):
+            raise ValueError("Response missing 'summary' array")
+        if not isinstance(data.get("quiz"), list):
+            raise ValueError("Response missing 'quiz' array")
+        
+        # Parse quiz questions with validation
+        quiz_questions = []
+        for i, q in enumerate(data.get("quiz", [])):
+            if not isinstance(q, dict):
+                raise ValueError(f"Quiz item {i} is not an object")
+            if "question" not in q:
+                raise ValueError(f"Quiz item {i} missing 'question' field")
+            if "options" not in q or not isinstance(q["options"], list):
+                raise ValueError(f"Quiz item {i} missing 'options' array")
+            if "answer" not in q:
+                raise ValueError(f"Quiz item {i} missing 'answer' field")
+            
+            quiz_questions.append(QuizQuestion(
+                question=q["question"],
+                options=q["options"],
+                answer=q["answer"]
+            ))
+        
         return GenerateResponse(
             summary=data.get("summary", []),
-            quiz=[
-                QuizQuestion(
-                    question=q["question"],
-                    options=q["options"],
-                    answer=q["answer"]
-                )
-                for q in data.get("quiz", [])
-            ]
+            quiz=quiz_questions
         )
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        print(f"[generate] Failed to parse Gemini response: {e}")
+    except json.JSONDecodeError as e:
+        print(f"[generate] Failed to parse JSON: {e}")
         print(f"[generate] Raw response: {response}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to parse AI response. Please try again."
+            detail="Failed to parse AI response as JSON. Please try again."
+        )
+    except (KeyError, TypeError, ValueError) as e:
+        print(f"[generate] Invalid response structure: {e}")
+        print(f"[generate] Raw response: {response}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid AI response format: {str(e)}"
         )
