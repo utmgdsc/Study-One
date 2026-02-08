@@ -7,7 +7,7 @@ from typing import List, Optional
 from services import GeminiService
 
 # Import the new prompt system
-from prompts.study_gen_v1 import (
+from backend.prompts.study_gen_v1 import (
     build_study_generation_prompt,
     validate_quiz_quality
 )
