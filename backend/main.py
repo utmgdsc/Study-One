@@ -6,6 +6,12 @@ from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from services import GeminiService
 
+# Import the new prompt system
+from prompts.study_gen_v1 import (
+    build_study_generation_prompt,
+    validate_quiz_quality
+)
+
 
 app = FastAPI(title="Socrato")
 
@@ -162,26 +168,32 @@ async def generate_study_materials(request: GenerateRequest):
         - quiz (QuizQuestion[]): Array of quiz questions
     """
     # Call Gemini to generate study materials
-    prompt = f"""You are a study assistant. Based on the following notes, generate:
-1. A summary as a list of bullet points (3-5 key points)
-2. A quiz with 3 multiple choice questions
+    # prompt = f"""You are a study assistant. Based on the following notes, generate:
+    # 1. A summary as a list of bullet points (3-5 key points)
+    # 2. A quiz with 3 multiple choice questions
 
-Notes:
-{request.text}
+    # Notes:
+    # {request.text}
 
-Respond in this exact JSON format:
-{{
-    "summary": ["point 1", "point 2", "point 3"],
-    "quiz": [
-        {{
-            "question": "Question text?",
-            "options": ["A", "B", "C", "D"],
-            "answer": "A"
-        }}
-    ]
-}}
+    # Respond in this exact JSON format:
+    # {{
+    #     "summary": ["point 1", "point 2", "point 3"],
+    #     "quiz": [
+    #         {{
+    #             "question": "Question text?",
+    #             "options": ["A", "B", "C", "D"],
+    #             "answer": "A"
+    #         }}
+    #     ]
+    # }}
 
-Return ONLY valid JSON, no markdown or extra text."""
+    # Return ONLY valid JSON, no markdown or extra text."""
+
+    # Build prompt using the centralized prompt system
+    prompt = build_study_generation_prompt(
+        user_notes=request.text,
+        include_examples=True  # Include few-shot examples for better quality
+    )
 
     response = await gemini_service.call_gemini(prompt)
     
@@ -215,6 +227,13 @@ Return ONLY valid JSON, no markdown or extra text."""
         
         quiz_questions = validate_data(data)
         
+        # Optional: Run quality checks on the quiz
+        quality_warnings = validate_quiz_quality(data.get("quiz", []))
+        if quality_warnings:
+            print(f"[generate] Quality warnings: {quality_warnings}")
+            # Can log these or return them to the frontend in the future
+
+
         return GenerateResponse(
             summary=data.get("summary", []),
             quiz=quiz_questions
