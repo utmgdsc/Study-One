@@ -12,7 +12,7 @@ This module provides:
 - Examples for few-shot learning
 """
 
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 # ============================================
@@ -290,7 +290,7 @@ Rules:
 # VALIDATION & QUALITY CHECKS
 # ============================================
 
-def validate_quiz_quality(quiz_data: list[dict]) -> list[str]:
+def validate_quiz_quality(quiz_data: List[Dict]) -> List[str]:
     """
     Check quiz questions for common quality issues.
     
