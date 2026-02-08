@@ -34,6 +34,7 @@ class GeminiService:
 
         self._configured = True
         load_dotenv(ROOT_DIR / ".env")
+        load_dotenv(ROOT_DIR / "backend" / ".env")  # fallback for backend/.env
         api_key = os.getenv("GEMINI_API_KEY")
 
         if not api_key or not api_key.strip():
