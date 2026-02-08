@@ -228,7 +228,7 @@ def clean_response(response):
     return cleaned.strip()
 
 
-def validate_structure(data):
+def validate_data(data):
     """
     Validate the study pack has all the required fields and return the list of quiz questions
     """
