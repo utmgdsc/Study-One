@@ -73,7 +73,7 @@ class StudyPackRequest(BaseModel):
     @field_validator('text')
     @classmethod
     def validate_text(cls, v: str) -> str:
-        # do not iclude whitespace
+        # do not include whitespace
         stripped = v.strip()
         # validate emptiness
         if not v or not stripped:
