@@ -87,6 +87,55 @@ class StudyPackRequest(BaseModel):
 
 
 # ============================================
+# STUDY PACK HELPER FUNCTIONS
+# ============================================
+def clean_response(response):
+    """
+    Clean up Gemini response by removing markdown code blocks
+    """
+    # Clean up response if it has markdown code blocks
+    cleaned = response.strip() 
+    # remove opening markdown code fence
+    cleaned = re.sub(r'^```[a-z]*\n?', '', cleaned) 
+    # remove closing markdown code fence
+    cleaned = re.sub(r'```$', '', cleaned)
+
+    return cleaned.strip()
+
+
+def validate_data(data):
+    """
+    Validate the study pack has all the required fields and return the list of quiz questions
+    """
+    # Validate required fields exist
+    if not isinstance(data.get("summary"), list):
+        raise ValueError("Response missing 'summary' array")
+    if not isinstance(data.get("quiz"), list):
+        raise ValueError("Response missing 'quiz' array")
+    
+    # Parse quiz questions with validation
+    quiz_questions = []
+    for i, q in enumerate(data.get("quiz", [])):
+        if not isinstance(q, dict):
+            raise ValueError(f"Quiz item {i} is not an object")
+        if "question" not in q:
+            raise ValueError(f"Quiz item {i} missing 'question' field")
+        if "options" not in q or not isinstance(q["options"], list):
+            raise ValueError(f"Quiz item {i} missing 'options' array")
+        if "answer" not in q:
+            raise ValueError(f"Quiz item {i} missing 'answer' field")
+        
+        quiz_questions.append(QuizQuestion(
+            question=q["question"],
+            options=q["options"],
+            answer=q["answer"]
+        ))
+
+    return quiz_questions
+
+
+
+# ============================================
 # ROUTES
 # ============================================
 
@@ -164,29 +213,7 @@ Return ONLY valid JSON, no markdown or extra text."""
         
         data = json.loads(cleaned)
         
-        # Validate required fields exist
-        if not isinstance(data.get("summary"), list):
-            raise ValueError("Response missing 'summary' array")
-        if not isinstance(data.get("quiz"), list):
-            raise ValueError("Response missing 'quiz' array")
-        
-        # Parse quiz questions with validation
-        quiz_questions = []
-        for i, q in enumerate(data.get("quiz", [])):
-            if not isinstance(q, dict):
-                raise ValueError(f"Quiz item {i} is not an object")
-            if "question" not in q:
-                raise ValueError(f"Quiz item {i} missing 'question' field")
-            if "options" not in q or not isinstance(q["options"], list):
-                raise ValueError(f"Quiz item {i} missing 'options' array")
-            if "answer" not in q:
-                raise ValueError(f"Quiz item {i} missing 'answer' field")
-            
-            quiz_questions.append(QuizQuestion(
-                question=q["question"],
-                options=q["options"],
-                answer=q["answer"]
-            ))
+        quiz_questions = validate_data(data)
         
         return GenerateResponse(
             summary=data.get("summary", []),
@@ -211,53 +238,6 @@ Return ONLY valid JSON, no markdown or extra text."""
 # ============================================
 # STUDY PACK ROUTE
 # ============================================
-
-
-# HELPER FUNCTIONS
-def clean_response(response):
-    """
-    Clean up Gemini response by removing markdown code blocks
-    """
-    # Clean up response if it has markdown code blocks
-    cleaned = response.strip() 
-    # remove opening markdown code fence
-    cleaned = re.sub(r'^```[a-z]*\n?', '', cleaned) 
-    # remove closing markdown code fence
-    cleaned = re.sub(r'```$', '', cleaned)
-
-    return cleaned.strip()
-
-
-def validate_data(data):
-    """
-    Validate the study pack has all the required fields and return the list of quiz questions
-    """
-    
-    if not isinstance(data['summary'], list):
-        raise ValueError("Response missing 'summary'")
-    if not isinstance(data['quiz'], list):
-        raise ValueError("Response missing 'quiz'")
-
-    
-    # validate quiz structure
-    quiz_questions = []
-    for i, q in enumerate(data['quiz']):
-        if not isinstance(q, dict):
-                raise ValueError(f"Quiz item {i} is not correct")
-        if "question" not in q:
-            raise ValueError(f"Quiz item {i} missing 'question' field")
-        if "options" not in q or not isinstance(q['options'], list):
-            raise ValueError(f"Quiz item {i} missing 'options' field")
-        if "answer" not in q:
-            raise ValueError(f"Quiz item {i} missing 'answer' field")
-
-        quiz_questions.append(QuizQuestion(
-            question=q["question"],
-            options=q["options"],
-            answer=q["answer"]
-        ))
-
-    return quiz_questions
 
 
 @app.post("/generate-study-pack", response_model=GenerateResponse)
@@ -310,7 +290,7 @@ Return ONLY valid JSON, no markdown or extra text."""
         data = json.loads(cleaned)
         
         # Validate required fields exist
-        quiz_questions = validate_structure(data)
+        quiz_questions = validate_data(data)
         
         return GenerateResponse(
             summary=data['summary'],

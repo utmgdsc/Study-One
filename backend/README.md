@@ -46,3 +46,9 @@ Run simple Gemini connection test:
 ```bash
 python tests/test_gemini_simple.py
 ```
+
+Run study pack test (require Gemini API key):
+
+```bash
+python tests/test_studypack.py
+```
