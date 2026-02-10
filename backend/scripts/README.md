@@ -49,6 +49,17 @@ curl -X POST http://127.0.0.1:8000/api/v1/generate \
   -d '{"text":""}'
 ```
 
+## Bypassing Gemini Quota (Alternative: pytest)
+
+When the Gemini API quota is exhausted, run the **integration tests** instead—they mock the API and don't use quota:
+
+```bash
+cd backend
+pytest tests/test_generate_endpoint.py -v
+```
+
+These tests cover the same short/long notes scenarios as the manual script.
+
 ## Definition of Done Checklist
 
 - [x] Endpoint tested with short notes
@@ -56,3 +67,5 @@ curl -X POST http://127.0.0.1:8000/api/v1/generate \
 - [x] Output structure is always valid JSON (when 200)
 - [x] Errors return meaningful messages (422 validation, 500 with detail)
 - [x] No unhandled exceptions (all errors caught and returned as HTTP responses)
+
+Run `pytest tests/test_generate_endpoint.py -v` to verify all 6 DoD tests pass.

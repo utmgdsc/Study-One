@@ -1,6 +1,6 @@
 # Manual test script for POST /api/v1/generate
 # Run with backend server: cd backend && .\venv\Scripts\Activate.ps1; uvicorn main:app --port 8000
-# Requires: GEMINI_API_KEY in backend/.env or Study-One/.env for generate tests
+# Requires: GEMINI_API_KEY (tokens) in backend/.env or Study-One/.env for generate tests
 
 $baseUrl = "http://127.0.0.1:8000"
 $passed = 0
