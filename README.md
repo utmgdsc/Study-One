@@ -20,16 +20,20 @@ Both services run locally and communicate over HTTP.
 
 ## .env Format
 
-```env
-# Backend
-DATABASE_URL=
-JWT_SECRET=
-ENV=development
-GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+Create a `.env` file at the **project root** (`Study-One/.env`).
 
-# Frontend
+```env
+# Backend (loaded from project root)
+GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+# DATABASE_URL=
+# JWT_SECRET=
+# ENV=development
+
+# Frontend (optional; defaults to http://localhost:8000)
 NEXT_PUBLIC_API_URL=
 ```
+
+The backend starts without `GEMINI_API_KEY` (e.g. for CI or running tests); the generate endpoint will return an error until the key is set.
 
 ---
 
@@ -157,6 +161,6 @@ Generates study materials (summary and quiz questions) from user notes.
 
 ## Notes
 
-- Frontend runs on port **3000**
-- Backend runs on port **8000**
-- Make sure both are running for full functionality
+- Frontend runs on port **3000**, backend on port **8000**. Run both for full functionality.
+- Frontend calls the backend at `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
+- For running backend tests, see [backend/README.md](backend/README.md#running-tests).
