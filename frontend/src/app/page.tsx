@@ -9,10 +9,7 @@ export default function Home() {
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isEmpty = !notes.trim();
-  const isDisabled = isEmpty || loading;
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(e: FormEvent) {
     if (isDisabled) return;
 
     setLoading(true);
