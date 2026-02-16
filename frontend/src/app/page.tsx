@@ -4,6 +4,18 @@ import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
 import { generateStudyMaterials } from "@/lib/api";
 
+const USER_FRIENDLY_FALLBACK =
+  "Something went wrong. Please try again.";
+
+function toUserFriendlyMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const isTechnical =
+    /request failed with status \d+/i.test(raw) ||
+    /^status \d+/i.test(raw) ||
+    /network|fetch|econnrefused|timeout/i.test(raw);
+  return isTechnical ? USER_FRIENDLY_FALLBACK : raw;
+}
+
 export default function Home() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,9 +36,7 @@ export default function Home() {
       console.log("Study materials response:", response);
     } catch (err) {
       console.error("Failed to generate study materials:", err);
-      const message =
-        err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      setErrorMessage(message);
+      setErrorMessage(toUserFriendlyMessage(err));
     } finally {
       setLoading(false);
     }
