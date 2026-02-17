@@ -4,9 +4,22 @@ import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
 import { generateStudyMaterials } from "@/lib/api";
 
+const USER_FRIENDLY_FALLBACK =
+  "Something went wrong. Please try again.";
+
+function toUserFriendlyMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const isTechnical =
+    /request failed with status \d+/i.test(raw) ||
+    /^status \d+/i.test(raw) ||
+    /network|fetch|econnrefused|timeout/i.test(raw);
+  return isTechnical ? USER_FRIENDLY_FALLBACK : raw;
+}
+
 export default function Home() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isEmpty = !notes.trim();
@@ -16,12 +29,14 @@ export default function Home() {
     e.preventDefault();
     if (isDisabled) return;
 
+    setErrorMessage(null);
     setLoading(true);
     try {
       const response = await generateStudyMaterials(notes.trim());
       console.log("Study materials response:", response);
     } catch (err) {
       console.error("Failed to generate study materials:", err);
+      setErrorMessage(toUserFriendlyMessage(err));
     } finally {
       setLoading(false);
     }
@@ -64,7 +79,10 @@ export default function Home() {
             <textarea
               id="notes"
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                setErrorMessage(null);
+              }}
               placeholder="Paste or type your study notes here..."
               rows={12}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -91,6 +109,24 @@ export default function Home() {
                   aria-hidden="true"
                 />
                 <span>Generating your study pack…</span>
+              </div>
+            )}
+
+            {errorMessage && (
+              <div
+                className="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                role="alert"
+                aria-live="assertive"
+              >
+                <span className="flex-1">{errorMessage}</span>
+                <button
+                  type="button"
+                  onClick={() => setErrorMessage(null)}
+                  className="shrink-0 font-medium underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-label="Dismiss error"
+                >
+                  Dismiss
+                </button>
               </div>
             )}
 
