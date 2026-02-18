@@ -29,7 +29,7 @@ app.add_middleware(
 
 class GenerateRequest(BaseModel):
     """
-    Request body for POST /api/v1/generate
+    Request body for POST /api/v1/generate and /generate-study-pack
     - text: The user's study notes to process
     """
     text: str
@@ -40,6 +40,18 @@ class GenerateRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("text must not be empty")
         return v
+
+    @field_validator("text")
+    @classmethod
+    def text_length_constraint(cls, v: str) -> str:
+        stripped = v.strip()
+        # validate length
+        if len(stripped) < 10:
+            raise ValueError(f"text must not be less than 10 characters")
+        if len(stripped) > 10000:
+            raise ValueError("text must not be more than 10000 characters")
+        return v
+
 
 
 class QuizQuestion(BaseModel):
@@ -241,7 +253,7 @@ Return ONLY valid JSON, no markdown or extra text."""
 
 
 @app.post("/generate-study-pack", response_model=GenerateResponse)
-async def generate_study_pack(request: StudyPackRequest):
+async def generate_study_pack(request: GenerateRequest):
     """
     Generate a study pack from user notes.
     
@@ -280,7 +292,7 @@ Return ONLY valid JSON, no markdown or extra text."""
     if response is None:
         raise HTTPException(
             status_code=500,
-            detail="Gemini API is unavailable. Please ensure GEMINI_API_KEY is set in .env file."
+            detail="Failed to generate study pack. Please try again."
         )
         
     try:
