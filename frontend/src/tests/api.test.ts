@@ -128,13 +128,22 @@ describe("generateStudyPack - errors", () => {
         await expect(generateStudyPack(VALID_NOTES)).rejects.toThrow();
     });
 
-    it("422 - text length error", async () => {
+    it("422 - short text length error", async () => {
         mockFetch(422, {
             detail: [{ loc: ["body", "text"], msg: "text must not be less than 10 characters" }],
         });
         
         await expect(generateStudyPack("q")).rejects.toThrow();
     });
+
+    it("422 - long text length error", async () => {
+        mockFetch(422, {
+            detail: [{ loc: ["body", "text"], msg: "text must not be more than 10000 characters" }],
+        });
+        
+        await expect(generateStudyPack("q".repeat(10001))).rejects.toThrow();
+    });
+
 
     it("500 - AI parse failure", async () => {
         mockFetch(500, {
