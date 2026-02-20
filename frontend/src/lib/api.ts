@@ -62,9 +62,8 @@ export async function generateStudyPack(
   // check for any errors
   if (!response.ok){
     const error = await response.json().catch(()=>({}));
-    throw new Error(
-      error.detail[0].msg || `Request failed with status ${response.status}`
-    );
+    const errorMessage = error.detail?.[0]?.msg || error.detail || `Request failed with status ${response.status}`;
+    throw new Error(errorMessage);
   }
   return response.json();
 }
