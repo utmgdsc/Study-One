@@ -1,8 +1,9 @@
 /**
  * Test to check Home in page.tsx
  * 
- * 
- * @jest-environment jsdom
+ * to run test:
+ * 1. install: npm install --save-dev jest-environment-jsdom @testing-library/react @testing-library/jest-dom @testing-library/user-event
+ * 2. run: npm test
  */
 
 import "@testing-library/jest-dom";
@@ -117,7 +118,7 @@ describe("Home page - no page crashes", () => {
         await waitFor(() => {
             expect(screen.getByRole("textbox")).toBeInTheDocument();
             expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-            // expect(screen.getByText("Plants use sunlight to produce food.")).toBeInTheDocument();
+            expect(screen.getByText("Plants use sunlight to produce food.")).toBeInTheDocument();
         });
     });
 });

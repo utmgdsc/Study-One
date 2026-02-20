@@ -163,8 +163,91 @@ export default function Home() {
           </div>
         </form>
         
-      
+        {/* UI for testing end-to-end connection */}
+        {studyPack && !loading && (
+          <div className="mt-8 space-y-6">
+            <h1 className="mb-4 text-lg font-bold">Study Pack Display for Connectivity Test Purpose</h1>
+            {/* Summary Section */}
+            <section className="rounded-lg border border-border bg-card p-6">
+              <h2 className="mb-4 text-lg font-semibold">Summary</h2>
+              <ul className="space-y-2">
+                {studyPack.summary.map((point, index) => (
+                  <li key={index} className="flex gap-2 text-sm">
+                    <span className="text-muted-foreground">-</span>
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* Quiz Section */}
+            <section className="rounded-lg border border-border bg-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Quiz</h2>
+              </div>
+              <div>
+                {studyPack.quiz.map((q, index) => (
+                  <QuestionDisplay 
+                    key={index}
+                    question={q} 
+                    index={index} 
+                  />
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </main>
+  );
+}
+
+
+// quiz question display for testing end-to-end connectivity
+function QuestionDisplay({ question, index }: { question: QuizQuestion; index: number }) {
+  // answer selected
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  // show answer
+  const [showAnswer, setShowAnswer] = useState(false);
+
+  // correct answer if selected answer = answer to question
+  const correctAnswer = selectedAnswer === question.answer;
+
+  return (
+    <div className="space-y-3">
+      <h3 className="font-medium">
+        {index + 1}. {question.question}
+      </h3>
+      <div className="space-y-2">
+        {question.options.map((option, optIndex) => (
+          <button
+            key={optIndex}
+            onClick={() => {
+              setSelectedAnswer(option);
+              setShowAnswer(true);
+            }}
+            disabled={showAnswer}
+            className={`w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+              showAnswer
+                ? option === question.answer
+                  ? "border-green-500 bg-green-50 dark:bg-green-950"
+                  : option === selectedAnswer
+                  ? "border-red-500 bg-red-50 dark:bg-red-950"
+                  : "border-border bg-background opacity-50"
+                : "border-border bg-background hover:border-primary hover:bg-accent"
+            } ${showAnswer ? "cursor-default" : "cursor-pointer"}`}
+          >
+            {option}
+            {showAnswer && option === question.answer && (
+              <span className="ml-2 text-green-600 dark:text-green-400">Correct</span>
+            )}
+            {showAnswer && option === selectedAnswer && option !== question.answer && (
+              <span className="ml-2 text-red-600 dark:text-red-400">Incorrect</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+    </div>
   );
 }
