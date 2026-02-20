@@ -21,6 +21,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def check_empty_text(v: str) -> str:
+    if not v or not v.strip():
+        raise ValueError("text must not be empty")
+    return v
+
 
 # ============================================
 # REQUEST/RESPONSE SCHEMAS
@@ -37,9 +42,7 @@ class GenerateRequest(BaseModel):
     @field_validator("text")
     @classmethod
     def text_must_not_be_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("text must not be empty")
-        return v
+        return check_empty_text(v)
 
 
 class StudyPackRequest(GenerateRequest):
@@ -50,6 +53,7 @@ class StudyPackRequest(GenerateRequest):
     @field_validator("text")
     @classmethod
     def text_length_constraint(cls, v: str) -> str:
+        v = check_empty_text(v)
         stripped = v.strip()
         # validate length
         if len(stripped) < 10:
