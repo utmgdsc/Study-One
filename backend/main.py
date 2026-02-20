@@ -71,32 +71,6 @@ class GenerateResponse(BaseModel):
     quiz: list[QuizQuestion]
 
 
-# ============================================
-# STUDY PACK REQUESTS
-# ============================================
-
-class StudyPackRequest(BaseModel):
-    """
-    Request body for POST /generate-study-pack
-    - text: The user's study notes to process
-    """
-    text: str
-    
-    @field_validator('text')
-    @classmethod
-    def validate_text(cls, v: str) -> str:
-        # do not include whitespace
-        stripped = v.strip()
-        # validate emptiness
-        if not v or not stripped:
-            raise ValueError("text must not be empty")
-        # validate length
-        if len(stripped) < 10:
-            raise ValueError(f"text must not be less than 10 characters")
-        if len(stripped) > 10000:
-            raise ValueError("text must not be more than 10000 characters")
-        return v
-
 
 # ============================================
 # STUDY PACK HELPER FUNCTIONS
