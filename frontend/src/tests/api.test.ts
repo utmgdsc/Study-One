@@ -1,5 +1,5 @@
 /*
-Tests for lib/ api.ts - generateStudyPack
+Tests for lib/api.ts - generateStudyPack
 
 to run the test: 
 1. install: npm install --save-dev ts-jest @types/jest

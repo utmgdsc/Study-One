@@ -38,7 +38,13 @@ export async function generateStudyMaterials(
   return response.json();
 }
 
-
+/**
+ * Generates study pack from user notes.
+ * 
+ * @param text - The user's study notes to process
+ * @returns Promise containing summary bullet points and quiz questions
+ * @throws Error if the request fails or validation fails
+ */
 export async function generateStudyPack(
   text: string
 ): Promise<GenerateResponse>{
