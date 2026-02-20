@@ -35,7 +35,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 
-from main import app, GenerateRequest, QuizQuestion, clean_response, validate_data
+from main import app, StudyPackRequest, QuizQuestion, clean_response, validate_data
 from services.gemini import GeminiService
 from fastapi.testclient import TestClient
 
@@ -90,58 +90,58 @@ MOCK_GEMINI_RESPONSE = json.dumps({
 MOCK_GEMINI_RESPONSE_WITH_MARKDOWN = f"```json\n{MOCK_GEMINI_RESPONSE}\n```"
 
 
-class TestGenerateRequest:
-    """Test suite for GenerateRequest"""
+class TestStudyPackRequest:
+    """Test suite for StudyPackRequest"""
 
     def test_valid_request_creation(self):
-        """Test creating a valid GenerateRequest"""
+        """Test creating a valid StudyPackRequest"""
         valid_text = "This is a valid study note with enough characters"
         
-        request = GenerateRequest(text=valid_text)
+        request = StudyPackRequest(text=valid_text)
         
         assert request.text == valid_text
 
     def test_rejects_empty_text(self):
-        """Test that GenerateRequest rejects empty text"""
+        """Test that StudyPackRequest rejects empty text"""
         with pytest.raises(ValidationError) as exc_info:
-            GenerateRequest(text="")
+            StudyPackRequest(text="")
         
         assert "empty" in str(exc_info.value).lower()
 
     def test_rejects_whitespace_only(self):
-        """Test that GenerateRequest rejects whitespace-only text"""
+        """Test that StudyPackRequest rejects whitespace-only text"""
         with pytest.raises(ValidationError) as exc_info:
-            GenerateRequest(text="   \n\t  ")
+            StudyPackRequest(text="   \n\t  ")
         
         assert "empty" in str(exc_info.value).lower()
 
     def test_rejects_text_too_short(self):
-        """Test that GenerateRequest rejects text less than 10 characters"""
+        """Test that StudyPackRequest rejects text less than 10 characters"""
         with pytest.raises(ValidationError) as exc_info:
-            GenerateRequest(text="short")
+            StudyPackRequest(text="short")
         
         assert "10 characters" in str(exc_info.value)
 
     def test_rejects_text_too_long(self):
-        """Test that GenerateRequest rejects text over 10000 characters"""
+        """Test that StudyPackRequest rejects text over 10000 characters"""
         with pytest.raises(ValidationError) as exc_info:
-            GenerateRequest(text="a" * 10001)
+            StudyPackRequest(text="a" * 10001)
         
         assert "10000 characters" in str(exc_info.value)
 
     def test_accepts_text_at_minimum_boundary(self):
-        """Test that GenerateRequest accepts text at exactly 10 characters"""
+        """Test that StudyPackRequest accepts text at exactly 10 characters"""
         minimum_text = "a" * 10
         
-        request = GenerateRequest(text=minimum_text)
+        request = StudyPackRequest(text=minimum_text)
         
         assert request.text == minimum_text
 
     def test_accepts_text_at_maximum_boundary(self):
-        """Test that GenerateRequest accepts text at exactly 10000 characters"""
+        """Test that StudyPackRequest accepts text at exactly 10000 characters"""
         maximum_text = "a" * 10000
         
-        request = GenerateRequest(text=maximum_text)
+        request = StudyPackRequest(text=maximum_text)
         
         assert request.text == maximum_text
 
@@ -346,7 +346,7 @@ class TestStudyPackEndpoint:
         )
         
         assert response.status_code == 500
-        assert "Failed to generate" in response.json()["detail"]
+        assert "Gemini unavailable" in response.json()["detail"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_handles_invalid_json_from_gemini(self, mock_gemini, client):

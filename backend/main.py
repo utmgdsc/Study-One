@@ -29,7 +29,7 @@ app.add_middleware(
 
 class GenerateRequest(BaseModel):
     """
-    Request body for POST /api/v1/generate and /generate-study-pack
+    Request body for POST /api/v1/generate
     - text: The user's study notes to process
     """
     text: str
@@ -41,6 +41,12 @@ class GenerateRequest(BaseModel):
             raise ValueError("text must not be empty")
         return v
 
+
+class StudyPackRequest(GenerateRequest):
+    """
+    Request body for POST /generate-study-pack
+    - text: The user's study notes to process
+    """
     @field_validator("text")
     @classmethod
     def text_length_constraint(cls, v: str) -> str:
@@ -227,7 +233,7 @@ Return ONLY valid JSON, no markdown or extra text."""
 
 
 @app.post("/generate-study-pack", response_model=GenerateResponse)
-async def generate_study_pack(request: GenerateRequest):
+async def generate_study_pack(request: StudyPackRequest):
     """
     Generate a study pack from user notes.
     
@@ -266,7 +272,7 @@ Return ONLY valid JSON, no markdown or extra text."""
     if response is None:
         raise HTTPException(
             status_code=500,
-            detail="Failed to generate study pack. Please try again."
+            detail="Gemini unavailable. Please try again."
         )
         
     try:

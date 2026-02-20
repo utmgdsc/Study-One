@@ -86,7 +86,7 @@ describe("Home page - no page crashes", () => {
         render(<Home />);
 
         fireEvent.change(screen.getByRole("textbox"), {
-            target: {value: "q".repeat}
+            target: {value: "q".repeat(10001)}
         });
         fireEvent.click(screen.getByRole("button", {name: /generate study pack/i}));
 

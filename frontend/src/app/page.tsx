@@ -210,9 +210,6 @@ function QuestionDisplay({ question, index }: { question: QuizQuestion; index: n
   // show answer
   const [showAnswer, setShowAnswer] = useState(false);
 
-  // correct answer if selected answer = answer to question
-  const correctAnswer = selectedAnswer === question.answer;
-
   return (
     <div className="space-y-3">
       <h3 className="font-medium">
