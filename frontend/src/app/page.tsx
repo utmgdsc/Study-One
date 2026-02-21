@@ -39,6 +39,7 @@ export default function Home() {
     } catch (err) {
       console.error("Failed to generate study materials:", err);
       setErrorMessage(toUserFriendlyMessage(err));
+      setStudyPack(null);
     } finally {
       setLoading(false);
     }
