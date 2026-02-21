@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
+import type { GenerateResponse } from "@/types/api";
 import { generateStudyMaterials } from "@/lib/api";
 
 const USER_FRIENDLY_FALLBACK =
@@ -20,6 +21,7 @@ export default function Home() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isEmpty = !notes.trim();
@@ -33,7 +35,7 @@ export default function Home() {
     setLoading(true);
     try {
       const response = await generateStudyMaterials(notes.trim());
-      console.log("Study materials response:", response);
+      setStudyPack(response);
     } catch (err) {
       console.error("Failed to generate study materials:", err);
       setErrorMessage(toUserFriendlyMessage(err));
@@ -140,6 +142,48 @@ export default function Home() {
             </button>
           </div>
         </form>
+
+        {studyPack && (studyPack.summary?.length > 0 || studyPack.quiz?.length > 0) && (
+          <div className="mt-8 space-y-8 border-t border-border pt-8" role="region" aria-label="Study pack">
+            {(studyPack.summary?.length ?? 0) > 0 && (
+              <section aria-labelledby="summary-heading">
+                <h2 id="summary-heading" className="mb-2 text-lg font-medium">
+                  Summary
+                </h2>
+                <ul className="list-disc list-inside space-y-1 text-sm text-foreground">
+                  {(studyPack.summary ?? []).map((point, i) => (
+                    <li key={i}>{point}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {(studyPack.quiz?.length ?? 0) > 0 && (
+              <section aria-labelledby="quiz-heading">
+                <h2 id="quiz-heading" className="mb-4 text-lg font-medium">
+                  Quiz
+                </h2>
+                <ul className="list-none space-y-6 text-sm">
+                  {(studyPack.quiz ?? []).map((q, i) => (
+                    <li key={i} className="border-b border-border pb-6 last:border-0 last:pb-0">
+                      <p className="mb-2 font-medium text-foreground">
+                        {i + 1}. {q.question}
+                      </p>
+                      <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                        {q.options.map((opt, j) => (
+                          <li key={j}>{opt}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-foreground">
+                        <span className="font-medium">Answer:</span> {q.answer}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        )}
       </div>
     </main>
   );
