@@ -148,41 +148,42 @@ class TestStudyPackRequest:
 class TestStudyPackEndpoint:
     """Test suite for POST /generate-study-pack endpoint"""
 
-    def test_endpoint_exists(self, client):
+    def test_endpoint_exists(self, client, auth_headers):
         """Test that POST /generate-study-pack endpoint exists"""
-        # Even without mocking, endpoint should exist (might fail for other reasons)
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         # Should not return 404 (Not Found)
         assert response.status_code != 404
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_accepts_raw_text_input(self, mock_gemini, client):
+    def test_accepts_raw_text_input(self, mock_gemini, client, auth_headers):
         """Test that endpoint accepts raw text input in request body"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
-        # Verify Gemini was called with the input text
         assert mock_gemini.called
         call_args = mock_gemini.call_args[0][0]
         assert VALID_NOTES in call_args
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_returns_json_matching_contract(self, mock_gemini, client):
+    def test_returns_json_matching_contract(self, mock_gemini, client, auth_headers):
         """Test that endpoint returns JSON matching the agreed API contract"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
@@ -209,11 +210,12 @@ class TestStudyPackEndpoint:
             assert isinstance(question["options"], list)
             assert isinstance(question["answer"], str)
 
-    def test_validates_empty_input(self, client):
+    def test_validates_empty_input(self, client, auth_headers):
         """Test that endpoint rejects empty text"""
         response = client.post(
             "/generate-study-pack",
-            json={"text": ""}
+            json={"text": ""},
+            headers=auth_headers,
         )
         
         assert response.status_code == 422
@@ -221,35 +223,38 @@ class TestStudyPackEndpoint:
         # Check that validation error mentions empty text
         assert any("empty" in str(err).lower() for err in error_detail)
 
-    def test_validates_whitespace_only_input(self, client):
+    def test_validates_whitespace_only_input(self, client, auth_headers):
         """Test that endpoint rejects whitespace-only text"""
         response = client.post(
             "/generate-study-pack",
-            json={"text": "   \n\t  "}
+            json={"text": "   \n\t  "},
+            headers=auth_headers,
         )
         
         assert response.status_code == 422
         error_detail = response.json()["detail"]
         assert any("empty" in str(err).lower() for err in error_detail)
 
-    def test_validates_input_too_short(self, client):
+    def test_validates_input_too_short(self, client, auth_headers):
         """Test that endpoint rejects text less than 10 characters"""
         response = client.post(
             "/generate-study-pack",
-            json={"text": "short"}
+            json={"text": "short"},
+            headers=auth_headers,
         )
         
         assert response.status_code == 422
         error_detail = response.json()["detail"]
         assert any("10 characters" in str(err) for err in error_detail)
 
-    def test_validates_input_length_exceeds_maximum(self, client):
+    def test_validates_input_length_exceeds_maximum(self, client, auth_headers):
         """Test that endpoint rejects text exceeding 10000 characters"""
         long_text = "a" * 10001
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": long_text}
+            json={"text": long_text},
+            headers=auth_headers,
         )
         
         assert response.status_code == 422
@@ -257,22 +262,22 @@ class TestStudyPackEndpoint:
         assert any("10000 characters" in str(err) for err in error_detail)
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_validates_input_length_at_maximum_boundary(self, mock_gemini, client):
+    def test_validates_input_length_at_maximum_boundary(self, mock_gemini, client, auth_headers):
         """Test that endpoint accepts text at exactly 10000 characters"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
         
-        # Create text of exactly 10000 characters (excluding whitespace)
         boundary_text = "a" * 10000
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": boundary_text}
+            json={"text": boundary_text},
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_validates_input_length_at_minimum_boundary(self, mock_gemini, client):
+    def test_validates_input_length_at_minimum_boundary(self, mock_gemini, client, auth_headers):
         """Test that endpoint accepts text at exactly 10 characters"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
         
@@ -280,28 +285,31 @@ class TestStudyPackEndpoint:
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": minimum_text}
+            json={"text": minimum_text},
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
 
-    def test_validates_missing_text_field(self, client):
+    def test_validates_missing_text_field(self, client, auth_headers):
         """Test that endpoint rejects request without text field"""
         response = client.post(
             "/generate-study-pack",
-            json={}
+            json={},
+            headers=auth_headers,
         )
         
         assert response.status_code == 422  # Pydantic validation error
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_endpoint_works_end_to_end(self, mock_gemini, client):
+    def test_endpoint_works_end_to_end(self, mock_gemini, client, auth_headers):
         """Test complete end-to-end flow with successful study pack generation"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
@@ -321,13 +329,14 @@ class TestStudyPackEndpoint:
         assert first_question["answer"] == "Supervised learning"
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_handles_markdown_code_blocks(self, mock_gemini, client):
+    def test_handles_markdown_code_blocks(self, mock_gemini, client, auth_headers):
         """Test that endpoint handles Gemini responses with markdown code blocks"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE_WITH_MARKDOWN
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
@@ -336,33 +345,35 @@ class TestStudyPackEndpoint:
         assert "quiz" in data
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_handles_gemini_api_unavailable(self, mock_gemini, client):
+    def test_handles_gemini_api_unavailable(self, mock_gemini, client, auth_headers):
         """Test that endpoint handles Gemini API returning None"""
         mock_gemini.return_value = None
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 500
         assert "GEMINI_API_KEY" in response.json()["detail"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_handles_invalid_json_from_gemini(self, mock_gemini, client):
+    def test_handles_invalid_json_from_gemini(self, mock_gemini, client, auth_headers):
         """Test that endpoint handles invalid JSON from Gemini"""
         mock_gemini.return_value = "This is not valid JSON {{"
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 500
         assert "JSON" in response.json()["detail"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_handles_missing_summary_field(self, mock_gemini, client):
+    def test_handles_missing_summary_field(self, mock_gemini, client, auth_headers):
         """Test that endpoint handles Gemini response missing summary field"""
         invalid_response = json.dumps({
             "quiz": [
@@ -377,14 +388,15 @@ class TestStudyPackEndpoint:
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 500
         assert "summary" in response.json()["detail"].lower()
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_handles_missing_quiz_field(self, mock_gemini, client):
+    def test_handles_missing_quiz_field(self, mock_gemini, client, auth_headers):
         """Test that endpoint handles Gemini response missing quiz field"""
         invalid_response = json.dumps({
             "summary": ["Point 1", "Point 2", "Point 3"]
@@ -393,14 +405,15 @@ class TestStudyPackEndpoint:
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 500
         assert "quiz" in response.json()["detail"].lower()
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_handles_malformed_quiz_question(self, mock_gemini, client):
+    def test_handles_malformed_quiz_question(self, mock_gemini, client, auth_headers):
         """Test that endpoint handles quiz question missing required fields"""
         invalid_response = json.dumps({
             "summary": ["Point 1", "Point 2", "Point 3"],
@@ -415,26 +428,28 @@ class TestStudyPackEndpoint:
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 500
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_response_content_type(self, mock_gemini, client):
+    def test_response_content_type(self, mock_gemini, client, auth_headers):
         """Test that endpoint returns JSON content type"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
         
         response = client.post(
             "/generate-study-pack",
-            json={"text": VALID_NOTES}
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
         assert "application/json" in response.headers["content-type"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_various_input_formats(self, mock_gemini, client):
+    def test_various_input_formats(self, mock_gemini, client, auth_headers):
         """Test endpoint with various valid input formats"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
         
@@ -449,7 +464,8 @@ class TestStudyPackEndpoint:
         for notes in test_cases:
             response = client.post(
                 "/generate-study-pack",
-                json={"text": notes}
+                json={"text": notes},
+                headers=auth_headers,
             )
             assert response.status_code == 200, f"Failed for input: {notes}"
 

@@ -11,6 +11,8 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
+import jwt as pyjwt
+from config import settings
 from main import app
 from main import gemini_service
 
@@ -33,6 +35,14 @@ MOCK_GEMINI_RESPONSE = """{
 }"""
 
 
+_token = pyjwt.encode(
+    {"sub": "test-user", "email": "t@t.com", "role": "authenticated", "aud": "authenticated"},
+    settings.SUPABASE_JWT_SECRET or "test-secret-for-ci",
+    algorithm="HS256",
+)
+AUTH = {"Authorization": f"Bearer {_token}"}
+
+
 class TestGenerateEndpoint:
     """Integration tests for the generate endpoint."""
 
@@ -45,6 +55,7 @@ class TestGenerateEndpoint:
         response = client.post(
             "/api/v1/generate",
             json={"text": "Photosynthesis converts light into chemical energy."},
+            headers=AUTH,
         )
 
         assert response.status_code == 200
@@ -74,6 +85,7 @@ class TestGenerateEndpoint:
         response = client.post(
             "/api/v1/generate",
             json={"text": long_text},
+            headers=AUTH,
         )
 
         assert response.status_code == 200
@@ -89,6 +101,7 @@ class TestGenerateEndpoint:
         response = client.post(
             "/api/v1/generate",
             json={"text": ""},
+            headers=AUTH,
         )
         assert response.status_code == 422
         data = response.json()
@@ -100,7 +113,7 @@ class TestGenerateEndpoint:
         response = client.post(
             "/api/v1/generate",
             content="not json",
-            headers={"Content-Type": "application/json"},
+            headers={**AUTH, "Content-Type": "application/json"},
         )
         assert response.status_code == 422
 
@@ -115,6 +128,7 @@ class TestGenerateEndpoint:
         response = client.post(
             "/api/v1/generate",
             json={"text": "Some notes"},
+            headers=AUTH,
         )
         assert response.status_code == 500
         data = response.json()
@@ -132,6 +146,7 @@ class TestGenerateEndpoint:
         response = client.post(
             "/api/v1/generate",
             json={"text": "Some notes"},
+            headers=AUTH,
         )
         assert response.status_code == 500
         data = response.json()
