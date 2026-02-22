@@ -166,11 +166,9 @@ async def get_current_user(user: UserPayload = Depends(require_user)):
 @app.post("/api/v1/generate", response_model=GenerateResponse)
 async def generate_study_materials(
     request: GenerateRequest,
-    user: UserPayload = Depends(require_user),
+    _user: UserPayload = Depends(require_user),
 ):
     """Generate study materials from user notes. Requires authentication."""
-    user_id = user["user_id"]
-
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
 2. A quiz with 3 multiple choice questions
@@ -252,11 +250,9 @@ Return ONLY valid JSON, no markdown or extra text."""
 @app.post("/generate-study-pack", response_model=GenerateResponse)
 async def generate_study_pack(
     request: StudyPackRequest,
-    user: UserPayload = Depends(require_user),
+    _user: UserPayload = Depends(require_user),
 ):
     """Generate a study pack from user notes. Requires authentication."""
-    user_id = user["user_id"]
-
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
 2. A quiz with 3 multiple choice questions

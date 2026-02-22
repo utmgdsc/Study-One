@@ -10,9 +10,18 @@ import { getAccessToken } from "./auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-async function authHeaders(): Promise<HeadersInit> {
+async function authHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const token = await getAccessToken();
+
+  let token: string | null;
+  try {
+    token = await getAccessToken();
+  } catch (err) {
+    throw new Error(
+      `Auth token retrieval failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
