@@ -11,6 +11,7 @@ import warnings
 
 import jwt as pyjwt
 from config import settings
+from middleware.auth import _expected_issuer
 
 
 def pytest_configure(config):
@@ -33,20 +34,26 @@ TEST_USER_EMAIL = "test@socrato.dev"
 
 
 def _make_test_token() -> str:
-    """Create a valid Supabase-style JWT for tests."""
+    """Create a valid Supabase-style JWT for tests.
+
+    Requires SUPABASE_JWT_SECRET to be set so the test token is signed
+    with the same secret the middleware uses to verify.
+    """
     secret = settings.SUPABASE_JWT_SECRET
     if not secret:
-        secret = "test-secret-for-ci"
-    return pyjwt.encode(
-        {
-            "sub": TEST_USER_ID,
-            "email": TEST_USER_EMAIL,
-            "role": "authenticated",
-            "aud": "authenticated",
-        },
-        secret,
-        algorithm="HS256",
-    )
+        pytest.skip("SUPABASE_JWT_SECRET not set — cannot create test JWT")
+
+    payload: dict = {
+        "sub": TEST_USER_ID,
+        "email": TEST_USER_EMAIL,
+        "role": "authenticated",
+        "aud": "authenticated",
+    }
+    issuer = _expected_issuer()
+    if issuer:
+        payload["iss"] = issuer
+
+    return pyjwt.encode(payload, secret, algorithm="HS256")
 
 
 @pytest.fixture()

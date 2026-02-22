@@ -8,6 +8,8 @@ Provides two dependencies:
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -15,11 +17,19 @@ import jwt
 
 from config import settings
 
+logger = logging.getLogger(__name__)
+
 _bearer = HTTPBearer(auto_error=False)
 
-# Minimal user dict returned by the dependencies.
-# Extend as needed (email, role, app_metadata, etc.).
 UserPayload = dict  # {"user_id": str, "email": str | None, "role": str | None}
+
+
+def _expected_issuer() -> str | None:
+    """Derive the expected JWT issuer from SUPABASE_URL."""
+    url = settings.SUPABASE_URL
+    if not url:
+        return None
+    return f"{url.rstrip('/')}/auth/v1"
 
 
 def _decode_token(token: str) -> dict:
@@ -30,15 +40,20 @@ def _decode_token(token: str) -> dict:
             status_code=503,
             detail="Auth is not configured (SUPABASE_JWT_SECRET missing).",
         )
+
+    issuer = _expected_issuer()
     try:
         return jwt.decode(
             token,
             secret,
             algorithms=["HS256"],
             audience="authenticated",
+            issuer=issuer,
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidIssuerError:
+        raise HTTPException(status_code=401, detail="Token issuer is not trusted")
     except jwt.InvalidTokenError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 

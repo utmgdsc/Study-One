@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 import jwt as pyjwt
 from config import settings
+from middleware.auth import _expected_issuer
 from main import app
 from main import gemini_service
 
@@ -35,12 +36,24 @@ MOCK_GEMINI_RESPONSE = """{
 }"""
 
 
-_token = pyjwt.encode(
-    {"sub": "test-user", "email": "t@t.com", "role": "authenticated", "aud": "authenticated"},
-    settings.SUPABASE_JWT_SECRET or "test-secret-for-ci",
-    algorithm="HS256",
-)
-AUTH = {"Authorization": f"Bearer {_token}"}
+def _build_auth_header() -> dict[str, str]:
+    secret = settings.SUPABASE_JWT_SECRET
+    if not secret:
+        pytest.skip("SUPABASE_JWT_SECRET not set — cannot create test JWT")
+    payload: dict = {
+        "sub": "test-user",
+        "email": "t@t.com",
+        "role": "authenticated",
+        "aud": "authenticated",
+    }
+    issuer = _expected_issuer()
+    if issuer:
+        payload["iss"] = issuer
+    token = pyjwt.encode(payload, secret, algorithm="HS256")
+    return {"Authorization": f"Bearer {token}"}
+
+
+AUTH = _build_auth_header()
 
 
 class TestGenerateEndpoint:

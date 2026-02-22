@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +7,8 @@ from pydantic import BaseModel, field_validator
 from typing import Optional
 from services import GeminiService
 from middleware.auth import optional_user, require_user, UserPayload
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="Socrato")
@@ -167,7 +170,6 @@ async def generate_study_materials(
 ):
     """Generate study materials from user notes. Requires authentication."""
     user_id = user["user_id"]
-    print(f"[generate] request from user {user_id}")
 
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
@@ -227,15 +229,15 @@ Return ONLY valid JSON, no markdown or extra text."""
             quiz=quiz_questions
         )
     except json.JSONDecodeError as e:
-        print(f"[generate] Failed to parse JSON: {e}")
-        print(f"[generate] Raw response: {response}")
+        logger.warning("Failed to parse Gemini JSON: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
-        print(f"[generate] Invalid response structure: {e}")
-        print(f"[generate] Raw response: {response}")
+        logger.warning("Invalid Gemini response structure: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
@@ -254,7 +256,6 @@ async def generate_study_pack(
 ):
     """Generate a study pack from user notes. Requires authentication."""
     user_id = user["user_id"]
-    print(f"[generate-study-pack] request from user {user_id}")
 
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
@@ -301,15 +302,15 @@ Return ONLY valid JSON, no markdown or extra text."""
         )
     
     except json.JSONDecodeError as e:
-        print(f"[generate-study-pack] Failed to parse JSON: {e}")
-        print(f"[generate-study-pack] Raw response: {response}")
+        logger.warning("Failed to parse Gemini JSON: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
-        print(f"[generate-study-pack] Invalid response structure: {e}")
-        print(f"[generate-study-pack] Raw response: {response}")
+        logger.warning("Invalid Gemini response structure: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"

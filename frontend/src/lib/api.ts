@@ -17,8 +17,8 @@ async function authHeaders(): Promise<HeadersInit> {
     if (token) {
       (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
     }
-  } catch {
-    // No session — continue without auth header
+  } catch (err) {
+    console.warn("Failed to retrieve auth token:", err);
   }
   return headers;
 }
