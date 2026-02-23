@@ -16,6 +16,7 @@
 export interface GenerateRequest {
   text: string;
 }
+ 
 
 // ============================================
 // RESPONSE SCHEMA
