@@ -82,7 +82,7 @@ Rules:
 
 EXAMPLES = """Here are examples of correct output format:
 
---- EXAMPLE 1 ---
+EXAMPLE 1
 
 INPUT NOTES:
 "Photosynthesis is the process by which plants convert sunlight into energy. It occurs in chloroplasts and requires carbon dioxide and water. The outputs are glucose and oxygen."
@@ -113,7 +113,7 @@ CORRECT OUTPUT:
     ]
 }
 
---- EXAMPLE 2 ---
+EXAMPLE 2
 
 INPUT NOTES:
 "The water cycle includes evaporation, condensation, and precipitation. Water evaporates from oceans and lakes, forms clouds through condensation, and returns to Earth as rain or snow."
@@ -165,15 +165,16 @@ def build_study_generation_prompt(user_notes: str, include_examples: bool = True
     if include_examples:
         prompt_parts.extend([
             "",
+            "Examples of valid JSON output (do not copy any labels; return ONLY JSON):",
             EXAMPLES,
             "",
-            "--- YOUR TASK ---"
         ])
     
     prompt_parts.extend([
         "",
         f"Process these notes and generate study materials:",
         "",
+        "Return ONLY a JSON object. Do not include any headings, labels, or extra text.",
         user_notes,
         "",
         OUTPUT_FORMAT

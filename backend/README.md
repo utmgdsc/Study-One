@@ -47,13 +47,11 @@ Run simple Gemini connection test:
 python tests/test_gemini_simple.py
 ```
 
-<<<<<<< HEAD
 Run study pack test (require Gemini API key):
 
 ```bash
 python tests/test_studypack.py
 ```
-=======
 
 ---
 
@@ -171,4 +169,3 @@ Breaking schema can end up breaking frontend.
 
 ---
 
->>>>>>> 39ed2b2 (Updated readme on study prompt generation)

@@ -7,7 +7,7 @@ from typing import List, Optional
 from services import GeminiService
 
 # Import the new prompt system
-from backend.prompts.study_gen_v1 import (
+from prompts.study_gen_v1 import (
     build_study_generation_prompt,
     validate_quiz_quality
 )
@@ -51,7 +51,7 @@ class GenerateRequest(BaseModel):
 class QuizQuestion(BaseModel):
     """A single quiz question with multiple choice options"""
     question: str
-    options: list[str]
+    options: List[str]
     answer: str
 
 
@@ -61,8 +61,8 @@ class GenerateResponse(BaseModel):
     - summary: Array of bullet point summaries
     - quiz: Array of quiz questions with options and answers
     """
-    summary: list[str]
-    quiz: list[QuizQuestion]
+    summary: List[str]
+    quiz: List[QuizQuestion]
 
 
 # ============================================
@@ -167,27 +167,7 @@ async def generate_study_materials(request: GenerateRequest):
         - summary (string[]): Array of bullet point summaries
         - quiz (QuizQuestion[]): Array of quiz questions
     """
-    # Call Gemini to generate study materials
-    # prompt = f"""You are a study assistant. Based on the following notes, generate:
-    # 1. A summary as a list of bullet points (3-5 key points)
-    # 2. A quiz with 3 multiple choice questions
 
-    # Notes:
-    # {request.text}
-
-    # Respond in this exact JSON format:
-    # {{
-    #     "summary": ["point 1", "point 2", "point 3"],
-    #     "quiz": [
-    #         {{
-    #             "question": "Question text?",
-    #             "options": ["A", "B", "C", "D"],
-    #             "answer": "A"
-    #         }}
-    #     ]
-    # }}
-
-    # Return ONLY valid JSON, no markdown or extra text."""
 
     # Build prompt using the centralized prompt system
     prompt = build_study_generation_prompt(
@@ -230,8 +210,10 @@ async def generate_study_materials(request: GenerateRequest):
         # Optional: Run quality checks on the quiz
         quality_warnings = validate_quiz_quality(data.get("quiz", []))
         if quality_warnings:
-            print(f"[generate] Quality warnings: {quality_warnings}")
+            # print(f"[generate] Quality warnings: {quality_warnings}")
             # Can log these or return them to the frontend in the future
+            # 
+            print(f"[generate] Quality warnings count: {len(quality_warnings)}")
 
 
         return GenerateResponse(
@@ -240,14 +222,14 @@ async def generate_study_materials(request: GenerateRequest):
         )
     except json.JSONDecodeError as e:
         print(f"[generate] Failed to parse JSON: {e}")
-        print(f"[generate] Raw response: {response}")
+        print(f"[generate] Raw response length: {len(response) if response else 0}")
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
         print(f"[generate] Invalid response structure: {e}")
-        print(f"[generate] Raw response: {response}")
+        print(f"[generate-study-pack] Raw response length: {len(response) if response else 0}")
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
