@@ -68,16 +68,12 @@ export async function generateStudyPack(
 ): Promise<GenerateResponse>{
   const request : GenerateRequest = { text };
 
-  // get response
   const response = await fetch(`${API_BASE_URL}/generate-study-pack`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: await authHeaders(),
     body: JSON.stringify(request),
   });
 
-  // check for any errors
   if (!response.ok){
     const error = await response.json().catch(()=>({}));
     const errorMessage = error.detail?.[0]?.msg || error.detail || `Request failed with status ${response.status}`;
