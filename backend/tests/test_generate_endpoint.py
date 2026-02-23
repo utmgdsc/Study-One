@@ -53,7 +53,6 @@ def _build_auth_header() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-AUTH = _build_auth_header()
 
 
 class TestGenerateEndpoint:
