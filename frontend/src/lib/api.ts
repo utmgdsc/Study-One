@@ -55,3 +55,33 @@ export async function generateStudyMaterials(
 
   return response.json();
 }
+
+/**
+ * Generates study pack from user notes.
+ * 
+ * @param text - The user's study notes to process
+ * @returns Promise containing summary bullet points and quiz questions
+ * @throws Error if the request fails or validation fails
+ */
+export async function generateStudyPack(
+  text: string
+): Promise<GenerateResponse>{
+  const request : GenerateRequest = { text };
+
+  // get response
+  const response = await fetch(`${API_BASE_URL}/generate-study-pack`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  // check for any errors
+  if (!response.ok){
+    const error = await response.json().catch(()=>({}));
+    const errorMessage = error.detail?.[0]?.msg || error.detail || `Request failed with status ${response.status}`;
+    throw new Error(errorMessage);
+  }
+  return response.json();
+}

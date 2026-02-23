@@ -356,7 +356,7 @@ class TestStudyPackEndpoint:
         )
         
         assert response.status_code == 500
-        assert "GEMINI_API_KEY" in response.json()["detail"]
+        assert "Gemini unavailable" in response.json()["detail"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_handles_invalid_json_from_gemini(self, mock_gemini, client, auth_headers):
@@ -469,7 +469,7 @@ class TestStudyPackEndpoint:
             )
             assert response.status_code == 200, f"Failed for input: {notes}"
 
-
+    
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

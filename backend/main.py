@@ -25,6 +25,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def check_empty_text(v: str) -> str:
+    if not v or not v.strip():
+        raise ValueError("text must not be empty")
+    return v
+
 
 # ============================================
 # REQUEST/RESPONSE SCHEMAS
@@ -41,9 +46,26 @@ class GenerateRequest(BaseModel):
     @field_validator("text")
     @classmethod
     def text_must_not_be_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("text must not be empty")
+        return check_empty_text(v)
+
+
+class StudyPackRequest(GenerateRequest):
+    """
+    Request body for POST /generate-study-pack
+    - text: The user's study notes to process
+    """
+    @field_validator("text")
+    @classmethod
+    def text_length_constraint(cls, v: str) -> str:
+        v = check_empty_text(v)
+        stripped = v.strip()
+        # validate length
+        if len(stripped) < 10:
+            raise ValueError(f"text must not be less than 10 characters")
+        if len(stripped) > 10000:
+            raise ValueError("text must not be more than 10000 characters")
         return v
+
 
 
 class QuizQuestion(BaseModel):
@@ -62,32 +84,6 @@ class GenerateResponse(BaseModel):
     summary: list[str]
     quiz: list[QuizQuestion]
 
-
-# ============================================
-# STUDY PACK REQUESTS
-# ============================================
-
-class StudyPackRequest(BaseModel):
-    """
-    Request body for POST /generate-study-pack
-    - text: The user's study notes to process
-    """
-    text: str
-    
-    @field_validator('text')
-    @classmethod
-    def validate_text(cls, v: str) -> str:
-        # do not include whitespace
-        stripped = v.strip()
-        # validate emptiness
-        if not v or not stripped:
-            raise ValueError("text must not be empty")
-        # validate length
-        if len(stripped) < 10:
-            raise ValueError(f"text must not be less than 10 characters")
-        if len(stripped) > 10000:
-            raise ValueError("text must not be more than 10000 characters")
-        return v
 
 
 # ============================================
@@ -280,7 +276,7 @@ Return ONLY valid JSON, no markdown or extra text."""
     if response is None:
         raise HTTPException(
             status_code=500,
-            detail="Gemini API is unavailable. Please ensure GEMINI_API_KEY is set in .env file."
+            detail="Gemini unavailable. Please try again."
         )
         
     try:
