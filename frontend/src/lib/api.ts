@@ -14,12 +14,12 @@ async function authHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
 
   let token: string | null;
+  let token: string | null;
   try {
     token = await getAccessToken();
   } catch (err) {
-    throw new Error(
-      `Auth token retrieval failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.error("Failed to retrieve access token:", err);
+    token = null;
   }
 
   if (token) {
