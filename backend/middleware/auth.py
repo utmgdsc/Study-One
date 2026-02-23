@@ -90,3 +90,25 @@ async def optional_user(
         "email": payload.get("email"),
         "role": payload.get("role"),
     }
+
+
+async def user_for_generate(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> UserPayload | None:
+    """
+    Use for generate endpoints: when REQUIRE_AUTH_FOR_GENERATE is False, returns None (no auth).
+    When True, requires valid token (401 if missing). Set env REQUIRE_AUTH_FOR_GENERATE=true to require auth.
+    """
+    if not settings.REQUIRE_AUTH_FOR_GENERATE:
+        return None
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    payload = _decode_token(credentials.credentials)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token missing subject claim")
+    return {
+        "user_id": user_id,
+        "email": payload.get("email"),
+        "role": payload.get("role"),
+    }

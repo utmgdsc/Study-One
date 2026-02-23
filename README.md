@@ -31,6 +31,9 @@ GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 SUPABASE_URL="https://<your-project-ref>.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="eyJ..."
 SUPABASE_JWT_SECRET="your-jwt-secret"
+
+# Require login for generate endpoints? Set to true to enforce auth.
+# REQUIRE_AUTH_FOR_GENERATE=false
 ```
 
 | Variable | Where to find it |
@@ -39,6 +42,7 @@ SUPABASE_JWT_SECRET="your-jwt-secret"
 | `SUPABASE_URL` | Supabase Dashboard → Settings → API → Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Dashboard → Settings → API Keys → service_role (secret) |
 | `SUPABASE_JWT_SECRET` | Dashboard → Settings → API → JWT Settings → JWT Secret |
+| `REQUIRE_AUTH_FOR_GENERATE` | Optional. `true` = generate endpoints require Authorization; `false` or unset = no auth (default). |
 
 The backend starts without these keys (e.g. for CI or unit tests); the endpoints will return errors until they are set.
 

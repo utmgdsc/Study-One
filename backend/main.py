@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from services import GeminiService
-from middleware.auth import require_user, UserPayload
+from middleware.auth import require_user, UserPayload, user_for_generate
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +161,9 @@ async def get_current_user(user: UserPayload = Depends(require_user)):
 @app.post("/api/v1/generate", response_model=GenerateResponse)
 async def generate_study_materials(
     request: GenerateRequest,
-    _user: UserPayload = Depends(require_user),
+    _user: UserPayload | None = Depends(user_for_generate),
 ):
-    """Generate study materials from user notes. Requires authentication."""
+    """Generate study materials from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
 2. A quiz with 3 multiple choice questions
@@ -245,9 +245,9 @@ Return ONLY valid JSON, no markdown or extra text."""
 @app.post("/generate-study-pack", response_model=GenerateResponse)
 async def generate_study_pack(
     request: StudyPackRequest,
-    _user: UserPayload = Depends(require_user),
+    _user: UserPayload | None = Depends(user_for_generate),
 ):
-    """Generate a study pack from user notes. Requires authentication."""
+    """Generate a study pack from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
 2. A quiz with 3 multiple choice questions
