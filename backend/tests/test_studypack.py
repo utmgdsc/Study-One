@@ -12,7 +12,6 @@ Run from backend folder:
 
 import requests
 import json
-from typing import Dict, Any
 
 # Configuration
 BASE_URL = "http://localhost:8000"
