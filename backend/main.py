@@ -4,7 +4,6 @@ import re
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
-from typing import Optional
 from services import GeminiService
 from middleware.auth import require_user, UserPayload
 
