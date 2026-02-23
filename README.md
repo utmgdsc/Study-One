@@ -18,22 +18,80 @@ Both services run locally and communicate over HTTP.
 
 ---
 
-## .env Format
+## Environment Variables
 
-Create a `.env` file at the **project root** (`Study-One/.env`).
+### Backend (`Study-One/.env`)
+
+Create a `.env` file at the **project root**:
 
 ```env
-# Backend (loaded from project root)
 GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-# DATABASE_URL=
-# JWT_SECRET=
-# ENV=development
 
-# Frontend (optional; defaults to http://localhost:8000)
-NEXT_PUBLIC_API_URL=
+# Supabase — get from Dashboard → Project Settings → API
+SUPABASE_URL="https://<your-project-ref>.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="eyJ..."
+SUPABASE_JWT_SECRET="your-jwt-secret"
 ```
 
-The backend starts without `GEMINI_API_KEY` (e.g. for CI or running tests); the generate endpoint will return an error until the key is set.
+| Variable | Where to find it |
+|----------|-----------------|
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) |
+| `SUPABASE_URL` | Supabase Dashboard → Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Dashboard → Settings → API Keys → service_role (secret) |
+| `SUPABASE_JWT_SECRET` | Dashboard → Settings → API → JWT Settings → JWT Secret |
+
+The backend starts without these keys (e.g. for CI or unit tests); the endpoints will return errors until they are set.
+
+### Frontend (`frontend/.env.local`)
+
+```env
+# Optional; defaults to http://localhost:8000
+# NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Supabase — same project, client-side keys
+NEXT_PUBLIC_SUPABASE_URL="https://<your-project-ref>.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJ..."
+```
+
+| Variable | Where to find it |
+|----------|-----------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Same Project URL as backend |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Dashboard → Settings → API Keys → anon / publishable key |
+
+Copy `frontend/.env.example` to `frontend/.env.local` and fill in the values.
+
+> **Important:** `.env` files are git-ignored and must never be committed.
+
+---
+
+## Authentication
+
+Supabase handles both authentication and the PostgreSQL database.
+
+### How it works
+
+1. **Frontend**: Users sign up / sign in via Supabase Auth (`lib/auth.ts`). The session is managed by `AuthProvider` (React context).
+2. **API calls**: The frontend automatically attaches the Supabase access token as `Authorization: Bearer <token>` on every request.
+3. **Backend**: A JWT middleware (`middleware/auth.py`) verifies the token using the shared `SUPABASE_JWT_SECRET` and extracts `user_id`.
+4. **Protected routes**: All generate endpoints and `/api/v1/me` require a valid JWT. Unauthenticated requests receive `401`.
+
+### Testing the auth flow
+
+```bash
+# 1. Sign up a user (via Supabase dashboard or frontend)
+
+# 2. Get a valid access token (after sign-in, check browser DevTools → Application → Local Storage)
+
+# 3. Call the protected /me endpoint
+curl http://localhost:8000/api/v1/me \
+  -H "Authorization: Bearer <access_token>"
+
+# Expected: {"user_id": "...", "email": "...", "role": "authenticated"}
+
+# 4. Call without a token → 401
+curl http://localhost:8000/api/v1/me
+# Expected: {"detail": "Missing Authorization header"}
+```
 
 ---
 
@@ -122,6 +180,22 @@ From here you can run the frontend and backend independently using the instructi
 
 ## API Contract
 
+All protected endpoints require `Authorization: Bearer <token>`.
+
+### `GET /api/v1/me`
+
+Returns the authenticated user's identity.
+
+**Response:**
+
+```json
+{
+  "user_id": "uuid",
+  "email": "user@example.com",
+  "role": "authenticated"
+}
+```
+
 ### `POST /api/v1/generate`
 
 Generates study materials (summary and quiz questions) from user notes.
@@ -149,7 +223,13 @@ Generates study materials (summary and quiz questions) from user notes.
 }
 ```
 
-**Schema Files:**
+### `GET /health`
+
+Health check (no auth required).
+
+**Response:** `{"status": "ok"}`
+
+### Schema Files
 
 | Location | Description |
 |----------|-------------|

@@ -1,10 +1,13 @@
 import json
+import logging
 import re
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
-from typing import List, Optional
 from services import GeminiService
+from middleware.auth import require_user, UserPayload
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="Socrato")
@@ -145,19 +148,22 @@ def check_health():
     return {"status": "ok"}
 
 
+@app.get("/api/v1/me")
+async def get_current_user(user: UserPayload = Depends(require_user)):
+    """Return the authenticated user's identity. 401 if not logged in."""
+    return {
+        "user_id": user["user_id"],
+        "email": user.get("email"),
+        "role": user.get("role"),
+    }
+
+
 @app.post("/api/v1/generate", response_model=GenerateResponse)
-async def generate_study_materials(request: GenerateRequest):
-    """
-    Generate study materials from user notes.
-    
-    Request body:
-        - text (string): The user's study notes to process
-    
-    Returns:
-        - summary (string[]): Array of bullet point summaries
-        - quiz (QuizQuestion[]): Array of quiz questions
-    """
-    # Call Gemini to generate study materials
+async def generate_study_materials(
+    request: GenerateRequest,
+    _user: UserPayload = Depends(require_user),
+):
+    """Generate study materials from user notes. Requires authentication."""
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
 2. A quiz with 3 multiple choice questions
@@ -216,15 +222,15 @@ Return ONLY valid JSON, no markdown or extra text."""
             quiz=quiz_questions
         )
     except json.JSONDecodeError as e:
-        print(f"[generate] Failed to parse JSON: {e}")
-        print(f"[generate] Raw response: {response}")
+        logger.warning("Failed to parse Gemini JSON: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
-        print(f"[generate] Invalid response structure: {e}")
-        print(f"[generate] Raw response: {response}")
+        logger.warning("Invalid Gemini response structure: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
@@ -237,18 +243,11 @@ Return ONLY valid JSON, no markdown or extra text."""
 
 
 @app.post("/generate-study-pack", response_model=GenerateResponse)
-async def generate_study_pack(request: StudyPackRequest):
-    """
-    Generate a study pack from user notes.
-    
-    Request:
-        - text: The user's study notes to process
-    
-    Returns:
-        - summary: list of bullet points summarizing the text
-        - quiz: list of quiz questions
-    """
-
+async def generate_study_pack(
+    request: StudyPackRequest,
+    _user: UserPayload = Depends(require_user),
+):
+    """Generate a study pack from user notes. Requires authentication."""
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
 2. A quiz with 3 multiple choice questions
@@ -294,15 +293,15 @@ Return ONLY valid JSON, no markdown or extra text."""
         )
     
     except json.JSONDecodeError as e:
-        print(f"[generate-study-pack] Failed to parse JSON: {e}")
-        print(f"[generate-study-pack] Raw response: {response}")
+        logger.warning("Failed to parse Gemini JSON: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
-        print(f"[generate-study-pack] Invalid response structure: {e}")
-        print(f"[generate-study-pack] Raw response: {response}")
+        logger.warning("Invalid Gemini response structure: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
