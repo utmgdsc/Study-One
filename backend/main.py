@@ -250,9 +250,9 @@ async def generate_study_pack(
 ):
     """Generate a study pack from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
     prompt = build_study_generation_prompt(
-    user_notes=request.text,
-    include_examples=True,
-)
+        user_notes=request.text,
+        include_examples=True,
+    )
            
     # Call Gemini API
     response = await gemini_service.call_gemini(prompt)
