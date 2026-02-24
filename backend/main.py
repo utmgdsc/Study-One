@@ -6,8 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from services import GeminiService
 from middleware.auth import require_user, UserPayload, user_for_generate
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Import the new prompt system
+from prompts.study_gen_v1 import (
+    build_study_generation_prompt,
+    validate_quiz_quality
+)
 
 
 app = FastAPI(title="Socrato")
@@ -70,7 +77,7 @@ class StudyPackRequest(GenerateRequest):
 class QuizQuestion(BaseModel):
     """A single quiz question with multiple choice options"""
     question: str
-    options: list[str]
+    options: List[str]
     answer: str
 
 
@@ -80,8 +87,8 @@ class GenerateResponse(BaseModel):
     - summary: Array of bullet point summaries
     - quiz: Array of quiz questions with options and answers
     """
-    summary: list[str]
-    quiz: list[QuizQuestion]
+    summary: List[str]
+    quiz: List[QuizQuestion]
 
 
 
@@ -161,29 +168,15 @@ async def get_current_user(user: UserPayload = Depends(require_user)):
 @app.post("/api/v1/generate", response_model=GenerateResponse)
 async def generate_study_materials(
     request: GenerateRequest,
-    _user: UserPayload | None = Depends(user_for_generate),
+    _user: Optional[UserPayload] = Depends(user_for_generate),
 ):
     """Generate study materials from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
-    prompt = f"""You are a study assistant. Based on the following notes, generate:
-1. A summary as a list of bullet points (3-5 key points)
-2. A quiz with 3 multiple choice questions
 
-Notes:
-{request.text}
-
-Respond in this exact JSON format:
-{{
-    "summary": ["point 1", "point 2", "point 3"],
-    "quiz": [
-        {{
-            "question": "Question text?",
-            "options": ["A", "B", "C", "D"],
-            "answer": "A"
-        }}
-    ]
-}}
-
-Return ONLY valid JSON, no markdown or extra text."""
+    # Build prompt using the centralized prompt system
+    prompt = build_study_generation_prompt(
+        user_notes=request.text,
+        include_examples=True  # Include few-shot examples for better quality
+    )
 
     response = await gemini_service.call_gemini(prompt)
     
@@ -196,41 +189,34 @@ Return ONLY valid JSON, no markdown or extra text."""
     # Parse the JSON response from Gemini
     try:
         # Clean up response if it has markdown code blocks
-        cleaned = response.strip()
-        
-        # Remove opening markdown code fence (e.g., ```json or ```)
-        if cleaned.startswith("```"):
-            if "\n" in cleaned:
-                # Normal case: ```json\n{...}
-                cleaned = cleaned.split("\n", 1)[1]
-            else:
-                # Edge case: no newline, just remove the backticks
-                cleaned = cleaned[3:]
-        
-        # Remove closing markdown code fence
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        
-        cleaned = cleaned.strip()
+        cleaned = clean_response(response)
         
         data = json.loads(cleaned)
         
         quiz_questions = validate_data(data)
         
+        # Optional: Run quality checks on the quiz
+        quality_warnings = validate_quiz_quality(data.get("quiz", []))
+        if quality_warnings:
+            # print(f"[generate] Quality warnings: {quality_warnings}")
+            # Can log these or return them to the frontend in the future
+            logger.info("Quiz quality warnings count: %d", len(quality_warnings))
+
+
         return GenerateResponse(
             summary=data.get("summary", []),
             quiz=quiz_questions
         )
     except json.JSONDecodeError as e:
         logger.warning("Failed to parse Gemini JSON: %s", e)
-        logger.debug("Raw Gemini response: %s", response)
+        logger.debug("Raw Gemini response length: %s", len(response) if response else 0)
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
         logger.warning("Invalid Gemini response structure: %s", e)
-        logger.debug("Raw Gemini response: %s", response)
+        logger.debug("Raw Gemini response length: %s", len(response) if response else 0)
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
@@ -245,29 +231,13 @@ Return ONLY valid JSON, no markdown or extra text."""
 @app.post("/generate-study-pack", response_model=GenerateResponse)
 async def generate_study_pack(
     request: StudyPackRequest,
-    _user: UserPayload | None = Depends(user_for_generate),
+    _user: Optional[UserPayload] = Depends(user_for_generate),
 ):
     """Generate a study pack from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
-    prompt = f"""You are a study assistant. Based on the following notes, generate:
-1. A summary as a list of bullet points (3-5 key points)
-2. A quiz with 3 multiple choice questions
-
-Notes:
-{request.text}
-
-Respond in this exact JSON format:
-{{
-    "summary": ["point 1", "point 2", "point 3"],
-    "quiz": [
-        {{
-            "question": "Question text?",
-            "options": ["A", "B", "C", "D"],
-            "answer": "A"
-        }}
-    ]
-}}
-
-Return ONLY valid JSON, no markdown or extra text."""
+    prompt = build_study_generation_prompt(
+        user_notes=request.text,
+        include_examples=True,
+    )
            
     # Call Gemini API
     response = await gemini_service.call_gemini(prompt)
@@ -286,6 +256,10 @@ Return ONLY valid JSON, no markdown or extra text."""
         
         # Validate required fields exist
         quiz_questions = validate_data(data)
+
+        quality_warnings = validate_quiz_quality(data.get("quiz", []))
+        if quality_warnings:
+            logger.info("Quiz quality warnings count: %d", len(quality_warnings))
         
         return GenerateResponse(
             summary=data['summary'],
