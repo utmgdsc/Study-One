@@ -246,29 +246,13 @@ async def generate_study_materials(
 @app.post("/generate-study-pack", response_model=GenerateResponse)
 async def generate_study_pack(
     request: StudyPackRequest,
-    _user: UserPayload | None = Depends(user_for_generate),
+    _user: Optional[UserPayload] = Depends(user_for_generate),
 ):
     """Generate a study pack from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
-    prompt = f"""You are a study assistant. Based on the following notes, generate:
-1. A summary as a list of bullet points (3-5 key points)
-2. A quiz with 3 multiple choice questions
-
-Notes:
-{request.text}
-
-Respond in this exact JSON format:
-{{
-    "summary": ["point 1", "point 2", "point 3"],
-    "quiz": [
-        {{
-            "question": "Question text?",
-            "options": ["A", "B", "C", "D"],
-            "answer": "A"
-        }}
-    ]
-}}
-
-Return ONLY valid JSON, no markdown or extra text."""
+    prompt = build_study_generation_prompt(
+    user_notes=request.text,
+    include_examples=True,
+)
            
     # Call Gemini API
     response = await gemini_service.call_gemini(prompt)
