@@ -1,10 +1,14 @@
 import json
+import logging
 import re
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
-from typing import List, Optional
 from services import GeminiService
+from middleware.auth import require_user, UserPayload, user_for_generate
+from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 # Import the new prompt system
 from prompts.study_gen_v1 import (
@@ -27,6 +31,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def check_empty_text(v: str) -> str:
+    if not v or not v.strip():
+        raise ValueError("text must not be empty")
+    return v
+
 
 # ============================================
 # REQUEST/RESPONSE SCHEMAS
@@ -43,9 +52,26 @@ class GenerateRequest(BaseModel):
     @field_validator("text")
     @classmethod
     def text_must_not_be_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("text must not be empty")
+        return check_empty_text(v)
+
+
+class StudyPackRequest(GenerateRequest):
+    """
+    Request body for POST /generate-study-pack
+    - text: The user's study notes to process
+    """
+    @field_validator("text")
+    @classmethod
+    def text_length_constraint(cls, v: str) -> str:
+        v = check_empty_text(v)
+        stripped = v.strip()
+        # validate length
+        if len(stripped) < 10:
+            raise ValueError(f"text must not be less than 10 characters")
+        if len(stripped) > 10000:
+            raise ValueError("text must not be more than 10000 characters")
         return v
+
 
 
 class QuizQuestion(BaseModel):
@@ -64,32 +90,6 @@ class GenerateResponse(BaseModel):
     summary: List[str]
     quiz: List[QuizQuestion]
 
-
-# ============================================
-# STUDY PACK REQUESTS
-# ============================================
-
-class StudyPackRequest(BaseModel):
-    """
-    Request body for POST /generate-study-pack
-    - text: The user's study notes to process
-    """
-    text: str
-    
-    @field_validator('text')
-    @classmethod
-    def validate_text(cls, v: str) -> str:
-        # do not include whitespace
-        stripped = v.strip()
-        # validate emptiness
-        if not v or not stripped:
-            raise ValueError("text must not be empty")
-        # validate length
-        if len(stripped) < 10:
-            raise ValueError(f"text must not be less than 10 characters")
-        if len(stripped) > 10000:
-            raise ValueError("text must not be more than 10000 characters")
-        return v
 
 
 # ============================================
@@ -155,19 +155,22 @@ def check_health():
     return {"status": "ok"}
 
 
-@app.post("/api/v1/generate", response_model=GenerateResponse)
-async def generate_study_materials(request: GenerateRequest):
-    """
-    Generate study materials from user notes.
-    
-    Request body:
-        - text (string): The user's study notes to process
-    
-    Returns:
-        - summary (string[]): Array of bullet point summaries
-        - quiz (QuizQuestion[]): Array of quiz questions
-    """
+@app.get("/api/v1/me")
+async def get_current_user(user: UserPayload = Depends(require_user)):
+    """Return the authenticated user's identity. 401 if not logged in."""
+    return {
+        "user_id": user["user_id"],
+        "email": user.get("email"),
+        "role": user.get("role"),
+    }
 
+
+@app.post("/api/v1/generate", response_model=GenerateResponse)
+async def generate_study_materials(
+    request: GenerateRequest,
+    _user: Optional[UserPayload] = Depends(user_for_generate),
+):
+    """Generate study materials from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
 
     # Build prompt using the centralized prompt system
     prompt = build_study_generation_prompt(
@@ -212,8 +215,7 @@ async def generate_study_materials(request: GenerateRequest):
         if quality_warnings:
             # print(f"[generate] Quality warnings: {quality_warnings}")
             # Can log these or return them to the frontend in the future
-            # 
-            print(f"[generate] Quality warnings count: {len(quality_warnings)}")
+            logger.info("Quiz quality warnings count: %d", len(quality_warnings))
 
 
         return GenerateResponse(
@@ -221,15 +223,15 @@ async def generate_study_materials(request: GenerateRequest):
             quiz=quiz_questions
         )
     except json.JSONDecodeError as e:
-        print(f"[generate] Failed to parse JSON: {e}")
-        print(f"[generate] Raw response length: {len(response) if response else 0}")
+        logger.warning("Failed to parse Gemini JSON: %s", e)
+        logger.debug("Raw Gemini response length: %s", len(response) if response else 0)
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
-        print(f"[generate] Invalid response structure: {e}")
-        print(f"[generate-study-pack] Raw response length: {len(response) if response else 0}")
+        logger.warning("Invalid Gemini response structure: %s", e)
+        logger.debug("Raw Gemini response length: %s", len(response) if response else 0)
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
@@ -242,18 +244,11 @@ async def generate_study_materials(request: GenerateRequest):
 
 
 @app.post("/generate-study-pack", response_model=GenerateResponse)
-async def generate_study_pack(request: StudyPackRequest):
-    """
-    Generate a study pack from user notes.
-    
-    Request:
-        - text: The user's study notes to process
-    
-    Returns:
-        - summary: list of bullet points summarizing the text
-        - quiz: list of quiz questions
-    """
-
+async def generate_study_pack(
+    request: StudyPackRequest,
+    _user: UserPayload | None = Depends(user_for_generate),
+):
+    """Generate a study pack from user notes. Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
     prompt = f"""You are a study assistant. Based on the following notes, generate:
 1. A summary as a list of bullet points (3-5 key points)
 2. A quiz with 3 multiple choice questions
@@ -281,7 +276,7 @@ Return ONLY valid JSON, no markdown or extra text."""
     if response is None:
         raise HTTPException(
             status_code=500,
-            detail="Gemini API is unavailable. Please ensure GEMINI_API_KEY is set in .env file."
+            detail="Gemini unavailable. Please try again."
         )
         
     try:
@@ -299,15 +294,15 @@ Return ONLY valid JSON, no markdown or extra text."""
         )
     
     except json.JSONDecodeError as e:
-        print(f"[generate-study-pack] Failed to parse JSON: {e}")
-        print(f"[generate-study-pack] Raw response: {response}")
+        logger.warning("Failed to parse Gemini JSON: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail="Failed to parse AI response as JSON. Please try again."
         )
     except (KeyError, TypeError, ValueError) as e:
-        print(f"[generate-study-pack] Invalid response structure: {e}")
-        print(f"[generate-study-pack] Raw response: {response}")
+        logger.warning("Invalid Gemini response structure: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
         raise HTTPException(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
