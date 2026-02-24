@@ -189,22 +189,7 @@ async def generate_study_materials(
     # Parse the JSON response from Gemini
     try:
         # Clean up response if it has markdown code blocks
-        cleaned = response.strip()
-        
-        # Remove opening markdown code fence (e.g., ```json or ```)
-        if cleaned.startswith("```"):
-            if "\n" in cleaned:
-                # Normal case: ```json\n{...}
-                cleaned = cleaned.split("\n", 1)[1]
-            else:
-                # Edge case: no newline, just remove the backticks
-                cleaned = cleaned[3:]
-        
-        # Remove closing markdown code fence
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        
-        cleaned = cleaned.strip()
+        cleaned = clean_response(response)
         
         data = json.loads(cleaned)
         
@@ -271,6 +256,10 @@ async def generate_study_pack(
         
         # Validate required fields exist
         quiz_questions = validate_data(data)
+
+        quality_warnings = validate_quiz_quality(data.get("quiz", []))
+        if quality_warnings:
+            logger.info("Quiz quality warnings count: %d", len(quality_warnings))
         
         return GenerateResponse(
             summary=data['summary'],

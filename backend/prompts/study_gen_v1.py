@@ -80,15 +80,33 @@ Rules:
 # Helps the model understand expected quality
 # ============================================
 
-EXAMPLES = """Here are examples of correct output format:
+EXAMPLES = """{
+  "summary": [
+    "Photosynthesis converts sunlight into chemical energy (glucose) in plant cells.",
+    "It occurs in chloroplasts and uses carbon dioxide and water as inputs.",
+    "It produces glucose for energy storage and oxygen as a byproduct."
+  ],
+  "quiz": [
+    {
+      "question": "Where does photosynthesis take place in plant cells?",
+      "options": ["Mitochondria", "Chloroplasts", "Nucleus", "Cell wall"],
+      "answer": "Chloroplasts"
+    },
+    {
+      "question": "Which of the following is a product of photosynthesis?",
+      "options": ["Carbon dioxide", "Water", "Oxygen", "Nitrogen"],
+      "answer": "Oxygen"
+    },
+    {
+      "question": "What is the primary energy source for photosynthesis?",
+      "options": ["Heat", "Sunlight", "Chemical energy", "Wind"],
+      "answer": "Sunlight"
+    }
+  ]
+}"""
 
-EXAMPLE 1
 
-INPUT NOTES:
-"Photosynthesis is the process by which plants convert sunlight into energy. It occurs in chloroplasts and requires carbon dioxide and water. The outputs are glucose and oxygen."
-
-CORRECT OUTPUT:
-{
+EXAMPLES = """{
     "summary": [
         "Photosynthesis converts sunlight into chemical energy (glucose) in plant cells",
         "Occurs in chloroplasts and requires CO₂ and H₂O as inputs",
@@ -112,13 +130,6 @@ CORRECT OUTPUT:
         }
     ]
 }
-
-EXAMPLE 2
-
-INPUT NOTES:
-"The water cycle includes evaporation, condensation, and precipitation. Water evaporates from oceans and lakes, forms clouds through condensation, and returns to Earth as rain or snow."
-
-CORRECT OUTPUT:
 {
     "summary": [
         "The water cycle is a continuous process of water movement on Earth",
@@ -172,12 +183,13 @@ def build_study_generation_prompt(user_notes: str, include_examples: bool = True
     
     prompt_parts.extend([
         "",
-        f"Process these notes and generate study materials:",
+        "Process these notes and generate study materials:",
         "",
-        "Return ONLY a JSON object. Do not include any headings, labels, or extra text.",
         user_notes,
         "",
-        OUTPUT_FORMAT
+        "Return ONLY a JSON object. Do not include any headings, labels, code fences, or extra text.",
+        "",
+        OUTPUT_FORMAT,
     ])
     
     return "\n".join(prompt_parts)
