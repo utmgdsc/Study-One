@@ -124,7 +124,7 @@ export default function ProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user]);
 
   async function handleAuth(e: FormEvent) {
     e.preventDefault();
@@ -182,6 +182,13 @@ export default function ProfilePage() {
   }
 
   async function handleTestLogin() {
+    if (process.env.NODE_ENV === "production") {
+      setMessage({
+        type: "error",
+        text: "Test login is only available in non-production environments.",
+      });
+      return;
+    }
     const testEmail = process.env.NEXT_PUBLIC_TEST_USER_EMAIL;
     const testPassword = process.env.NEXT_PUBLIC_TEST_USER_PASSWORD;
     if (!testEmail?.trim() || !testPassword?.trim()) {
@@ -495,7 +502,9 @@ export default function ProfilePage() {
               </Link>
             )}
           </div>
-          {process.env.NEXT_PUBLIC_TEST_USER_EMAIL && process.env.NEXT_PUBLIC_TEST_USER_PASSWORD && (
+          {process.env.NODE_ENV !== "production" &&
+            process.env.NEXT_PUBLIC_TEST_USER_EMAIL &&
+            process.env.NEXT_PUBLIC_TEST_USER_PASSWORD && (
             <div className="mt-3 border-t border-border pt-3">
               <button
                 type="button"

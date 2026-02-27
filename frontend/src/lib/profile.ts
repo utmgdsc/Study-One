@@ -11,7 +11,6 @@ export type Profile = {
   first_name: string | null;
   last_name: string | null;
   display_name: string | null;
-  canvas_api_key: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -20,7 +19,7 @@ export type Profile = {
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, email, first_name, last_name, display_name, canvas_api_key, created_at, updated_at")
+    .select("id, email, first_name, last_name, display_name, created_at, updated_at")
     .eq("id", userId)
     .maybeSingle();
   if (error) throw error;
@@ -30,7 +29,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
 /** Update the current user's profile in public.profiles. RLS ensures only own row. Uses upsert so a missing row is created (requires "Users can insert own profile" RLS policy). */
 export async function updateProfile(
   userId: string,
-  updates: { first_name?: string; last_name?: string; display_name?: string; email?: string; canvas_api_key?: string },
+  updates: { first_name?: string; last_name?: string; display_name?: string; email?: string },
 ): Promise<void> {
   const { error } = await supabase.from("profiles").upsert(
     {
