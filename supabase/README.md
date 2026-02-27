@@ -1,5 +1,31 @@
 # Supabase setup
 
+## Quick setup checklist (new environment)
+
+1. **Run migrations (once per Supabase project)**  
+   In Supabase Dashboard → **SQL Editor**:
+   - Run `migrations/20250223000000_create_profiles.sql`  
+   - Run `migrations/20250226000000_profiles_first_last_name.sql`  
+   - Run `migrations/20250225000000_fix_profiles_email_and_trigger.sql`  
+   - Run `migrations/20250227000000_profiles_insert_policy.sql`  
+   - (Optional for Canvas) Run `migrations/20250228000000_profiles_canvas_api_key.sql`
+
+2. **Configure Forgot Password redirect URL**  
+   Supabase Dashboard → **Authentication → URL Configuration → Redirect URLs**:
+   - Add `http://localhost:3000/profile/reset-password` for local dev.
+   - Add your production URL, e.g. `https://your-domain.com/profile/reset-password`.
+
+3. **(Optional) Configure Test Login (dev-only)**  
+   - Create a test user in **Authentication → Users** with “Auto Confirm User” enabled.  
+   - In `frontend/.env.local` add:
+     - `NEXT_PUBLIC_TEST_USER_EMAIL=...`
+     - `NEXT_PUBLIC_TEST_USER_PASSWORD=...`  
+   - **Do not set these in production**; the app hides the Test login button when `NODE_ENV === "production"`.
+
+After these steps, auth + profile should work end-to-end in that environment.
+
+---
+
 ## 1. Create the `profiles` table and backfill users
 
 The app uses a **separate** table `public.profiles` (not the built-in `auth.users`). It has columns: `id`, `email`, `first_name`, `last_name`, `display_name`, `canvas_api_key`, `created_at`, `updated_at`.
