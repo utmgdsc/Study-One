@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, useEffect } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
@@ -13,15 +13,6 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
-
-  // After clicking the email link, Supabase sets the session; we might have user or recovery type in URL
-  useEffect(() => {
-    if (!loading && !user) {
-      // Give Supabase a moment to parse hash (recovery link)
-      const t = setTimeout(() => {}, 500);
-      return () => clearTimeout(t);
-    }
-  }, [loading, user]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
