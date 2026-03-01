@@ -91,6 +91,20 @@ class GenerateResponse(BaseModel):
     quiz: List[QuizQuestion]
 
 
+class MCQuiz(QuizQuestion):
+    """
+    A single quiz question with multiple choice options with a linked topic
+    """
+    topic: str  
+
+class GenerateQuizResponse(BaseModel):
+    """
+    Response from POST /api/v1/quiz
+    - quiz: Array of quiz questions with options, answers, and a linked topic
+    """
+    quiz: list[MCQuiz]
+
+
 
 # ============================================
 # STUDY PACK HELPER FUNCTIONS
@@ -265,6 +279,113 @@ async def generate_study_pack(
             summary=data['summary'],
             quiz=quiz_questions
         )
+    
+    except json.JSONDecodeError as e:
+        logger.warning("Failed to parse Gemini JSON: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to parse AI response as JSON. Please try again."
+        )
+    except (KeyError, TypeError, ValueError) as e:
+        logger.warning("Invalid Gemini response structure: %s", e)
+        logger.debug("Raw Gemini response: %s", response)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid AI response format: {str(e)}"
+        )
+    
+
+@app.post("/api/v1/quiz", response_model=GenerateQuizResponse)
+async def generate_quiz_questions(
+    request: StudyPackRequest,
+    _user: UserPayload | None = Depends(user_for_generate),
+):
+    """Generate MC Quiz from user notes.  Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
+
+    prompt = f"""You are a study assistant. Based on the following notes, generate 5-10 multiple choice questions where: 
+
+Each question must have a "topic" field. The topic must:
+- Be a short label (2-5 words) that names the specific concept the question is testing
+- Be directly derived from the question itself, not the notes in general
+- Be specific enough that it could serve as a study category for that question
+
+For example:
+- Question "What gas do plants absorb during photosynthesis?" → topic "Gas Absorption"
+- Question "Which organelle produces energy in a cell?" → topic "Cell Organelles"
+
+Bad topics (too vague, not linked to the question):
+- "Biology" (too broad)
+- "Science" (not linked)
+- "Study notes" (meaningless)
+
+The answer to the question must exactly match one of the options.
+
+Notes:
+{request.text}
+
+Respond in this exact JSON format:
+{{
+    "quiz": [
+        {{
+            "question": "Question text?",
+            "options": ["A", "B", "C", "D"],
+            "answer": "A",
+            "topic": "Specific Concept Name"
+        }}
+    ]
+}}
+
+Return ONLY valid JSON, no markdown or extra text."""
+
+    response = await gemini_service.call_gemini(prompt)
+    
+    if response is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate quiz. Please try again."
+        )
+    
+    # Parse the JSON response from Gemini
+    try:
+        # Clean up response if it has markdown code blocks
+        cleaned = clean_response(response)
+        
+        data = json.loads(cleaned)
+        
+        if not isinstance(data.get("quiz"), list):
+            raise ValueError("Response missing 'quiz' array")
+    
+        # Parse quiz questions with validation
+        quiz_questions = []
+        for i, q in enumerate(data.get("quiz", [])):
+            if not isinstance(q, dict):
+                raise ValueError(f"Quiz item {i} is not an object")
+            if "question" not in q:
+                raise ValueError(f"Quiz item {i} missing 'question' field")
+            if "options" not in q or not isinstance(q["options"], list):
+                raise ValueError(f"Quiz item {i} missing 'options' array")
+            if "answer" not in q:
+                raise ValueError(f"Quiz item {i} missing 'answer' field")
+            if "topic" not in q or not q["topic"].strip():
+                raise ValueError(f"Quiz item {i} missing 'topic' field")
+            if q["answer"] not in q["options"]:
+                raise ValueError(f"Quiz item {i} 'answer' not in 'options'")
+            
+
+            quiz_questions.append(MCQuiz(
+                question=q["question"],
+                options=q["options"],
+                answer=q["answer"], 
+                topic=q["topic"]
+            ))
+        
+        if len(quiz_questions) < 5:
+            raise ValueError(f"Expected at least 5 quiz questions, got {len(quiz_questions)}.")
+        if len(quiz_questions) > 10:
+            raise ValueError(f"Expected at most 10 quiz questions, got {len(quiz_questions)}")
+        
+        return GenerateQuizResponse(quiz=quiz_questions)
     
     except json.JSONDecodeError as e:
         logger.warning("Failed to parse Gemini JSON: %s", e)

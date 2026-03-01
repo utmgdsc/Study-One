@@ -17,7 +17,7 @@ HOW TO RUN TESTS
 
 IMPORTANT: You must be in the backend/ directory to run these tests.
 
-Start Virtual Environment:
+Start Virtual Environment
 
 Run all tests:
     pytest tests/test_study_pack_unit.py -v
@@ -402,7 +402,7 @@ class TestStudyPackEndpoint:
             "summary": ["Point 1", "Point 2", "Point 3"]
         })
         mock_gemini.return_value = invalid_response
-        
+
         response = client.post(
             "/generate-study-pack",
             json={"text": VALID_NOTES},
