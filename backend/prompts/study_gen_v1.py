@@ -314,6 +314,79 @@ def validate_quiz_quality(quiz_data: List[Dict]) -> List[str]:
     return warnings
 
 
+def build_flashcard_generation_prompt(
+    content: str,
+    mode: str = "notes",
+    difficulty: str = "medium",
+) -> str:
+    """
+    Build a prompt for generating exactly 10 Q/A flashcards.
+
+    Args:
+        content: Either the raw notes or a topic name.
+        mode: "notes" if content is study notes, "topic" if it's just a topic.
+        difficulty: "easy", "medium", or "hard"
+
+    Returns:
+        Prompt string for Gemini.
+    """
+    if mode == "topic":
+        user_instructions = f"Create flashcards to help a student learn the topic:\n{content}"
+    else:
+        user_instructions = f"Create flashcards from these study notes:\n{content}"
+
+    difficulty_instructions = {
+        "easy": """Difficulty: EASY
+- Focus on basic recall and simple definitions
+- Use straightforward, unambiguous questions
+- Answers should be concise (1-2 sentences)
+- Avoid trick questions or edge cases""",
+        "medium": """Difficulty: MEDIUM
+- Test understanding and application of concepts
+- Include some scenario-based or "why" questions
+- Answers may require connecting multiple ideas
+- Balance recall with comprehension""",
+        "hard": """Difficulty: HARD
+- Require deep understanding and critical thinking
+- Include synthesis, comparison, or analysis questions
+- Test nuances, exceptions, and edge cases
+- Answers may be longer and more detailed""",
+    }.get(difficulty, "")
+
+    prompt = f"""You are an expert study assistant.
+Task: Generate exactly 10 high-quality flashcards to help a student learn.
+
+Guidelines:
+- Use only information from the provided notes/topic
+- Do not invent facts
+- Use clear, student-friendly language
+- Each flashcard is a question and a concise answer
+- Questions should test understanding, not just memorization
+
+{difficulty_instructions}
+
+{user_instructions}
+
+Output format (follow exactly):
+{{
+    "flashcards": [
+        {{
+            "question": "Question text?",
+            "answer": "Answer text."
+        }}
+    ]
+}}
+
+Rules:
+- Output ONLY a single JSON object with a top-level "flashcards" array
+- Do NOT include markdown, code blocks, or any extra text
+- Do NOT include ```json or ``` markers
+- Generate EXACTLY 10 flashcards
+- Each flashcard must have a non-empty "question" and "answer" string"""
+
+    return prompt
+
+
 # ============================================
 # VERSION METADATA
 # ============================================

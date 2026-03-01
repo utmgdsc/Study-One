@@ -4,17 +4,15 @@ import re
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
-from services import GeminiService
+from services import GeminiService, get_supabase
 from middleware.auth import require_user, UserPayload, user_for_generate
 from typing import List, Optional
+from enum import Enum
+from prompts.study_gen_v1 import build_study_generation_prompt, validate_quiz_quality, build_flashcard_generation_prompt
+
 
 logger = logging.getLogger(__name__)
 
-# Import the new prompt system
-from prompts.study_gen_v1 import (
-    build_study_generation_prompt,
-    validate_quiz_quality
-)
 
 
 app = FastAPI(title="Socrato")
@@ -401,3 +399,135 @@ Return ONLY valid JSON, no markdown or extra text."""
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
         )
+    
+# ============================================
+# FLASHCARD SCHEMAS
+# ============================================
+
+class FlashcardDifficulty(str, Enum):
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+
+
+class FlashcardRequest(BaseModel):
+    text: Optional[str] = None
+    topic: Optional[str] = None
+    difficulty: FlashcardDifficulty = FlashcardDifficulty.MEDIUM
+
+    @field_validator("text", "topic")
+    @classmethod
+    def strip_strings(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        return v or None
+
+    def model_post_init(self, __context) -> None:
+        if not self.text and not self.topic:
+            raise ValueError("Either 'text' or 'topic' must be provided.")
+
+
+class Flashcard(BaseModel):
+    question: str
+    answer: str
+
+
+class FlashcardResponse(BaseModel):
+    flashcards: List[Flashcard]
+
+
+# ============================================
+# FLASHCARD HELPERS
+# ============================================
+
+def parse_and_validate_flashcards(raw_response: str) -> List[Flashcard]:
+    """Parse Gemini JSON and validate structure for flashcards."""
+    # Use the existing cleaning logic from clean_response
+    cleaned = clean_response(raw_response)
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"[flashcards] Failed to parse JSON: {e}")
+        print(f"[flashcards] Raw response: {raw_response}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to parse AI response as JSON. Please try again."
+        )
+
+    flashcards_raw = data.get("flashcards")
+    if not isinstance(flashcards_raw, list):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid AI response: 'flashcards' must be an array."
+        )
+    if len(flashcards_raw) != 10:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid AI response: expected 10 flashcards, got {len(flashcards_raw)}."
+        )
+
+    flashcards = []
+    for i, fc in enumerate(flashcards_raw):
+        if not isinstance(fc, dict):
+            raise HTTPException(status_code=500, detail=f"Flashcard {i} is not an object.")
+        q = fc.get("question")
+        a = fc.get("answer")
+        if not isinstance(q, str) or not q.strip():
+            raise HTTPException(status_code=500, detail=f"Flashcard {i} missing valid 'question'.")
+        if not isinstance(a, str) or not a.strip():
+            raise HTTPException(status_code=500, detail=f"Flashcard {i} missing valid 'answer'.")
+        flashcards.append(Flashcard(question=q.strip(), answer=a.strip()))
+
+    return flashcards
+
+
+# ============================================
+# FLASHCARD ROUTE
+# ============================================
+
+@app.post("/api/v1/flashcards", response_model=FlashcardResponse)
+async def generate_flashcards(
+    request: FlashcardRequest, 
+    user: Optional[UserPayload] = Depends(user_for_generate)):
+    """
+    Generate 10 Q/A flashcards from notes or a topic, store in Supabase.
+    """
+    content = request.text if request.text else request.topic
+    mode = "notes" if request.text else "topic"
+    difficulty = request.difficulty.value
+
+    prompt = build_flashcard_generation_prompt(
+        content=content,
+        mode=mode,
+        difficulty=difficulty,
+    )
+
+    response = await gemini_service.call_gemini(prompt)
+    if response is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate flashcards. Please try again."
+        )
+
+    flashcards = parse_and_validate_flashcards(response)
+
+    # Store in Supabase
+    sb = get_supabase()
+    try:
+        sb.table("flashcards").insert({
+            "user_id": user["user_id"] if user else "00000000-0000-0000-0000-000000000001",
+            "source_text": request.text,
+            "topic": request.topic,
+            "difficulty": difficulty,
+            "cards": [fc.model_dump() for fc in flashcards],
+        }).execute()
+    except Exception as e:
+        print(f"[flashcards] DB insert failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to store flashcards. Please try again."
+        )
+
+    return FlashcardResponse(flashcards=flashcards)
