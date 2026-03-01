@@ -367,6 +367,8 @@ Return ONLY valid JSON, no markdown or extra text."""
                 raise ValueError(f"Quiz item {i} missing 'options' array")
             if "answer" not in q:
                 raise ValueError(f"Quiz item {i} missing 'answer' field")
+            if q["answer"] not in q["options"]:
+                raise ValueError(f"Quiz item {i} 'answer' not in 'options'")
             if "topic" not in q:
                 raise ValueError(f"Quiz item {i} missing 'topic' field")
             
@@ -380,7 +382,7 @@ Return ONLY valid JSON, no markdown or extra text."""
             ))
         
         if len(quiz_questions) < 5:
-            raise ValueError(f"Expected at least 5 quiz questions, got {len(quiz_questions)}")
+            raise ValueError(f"Expected at least 5 quiz questions, got {len(quiz_questions)}.\n")
         if len(quiz_questions) > 10:
             raise ValueError(f"Expected at most 10 quiz questions, got {len(quiz_questions)}")
         

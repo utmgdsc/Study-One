@@ -252,7 +252,6 @@ class TestQuizQuestionStructure:
         for q in response.json()["quiz"]:
             assert q["topic"].strip() != "", "Topic must not be blank"
 
-
 # ---------------------------------------------------------------------------
 # TestCorrectAnswerStored
 # ---------------------------------------------------------------------------
@@ -261,7 +260,7 @@ class TestCorrectAnswerStored:
     """Test suite verifying the correct answer is stored and matches options"""
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
-    def test_answer_matche_an_option(self, mock_gemini, client, auth_headers):
+    def test_answer_match_an_option(self, mock_gemini, client, auth_headers):
         """Test that the answer value exactly matches one entry in options"""
         mock_gemini.return_value = MOCK_GEMINI_RESPONSE
 
@@ -366,6 +365,7 @@ class TestJSONValidation:
         )
 
         assert response.status_code == 500
+        assert "'quiz'" in response.json()["detail"] 
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_missing_question_field(self, mock_gemini, client, auth_headers):
@@ -411,7 +411,7 @@ class TestJSONValidation:
 
         assert response.status_code == 500
         assert "answer" in response.json()["detail"]
-
+    
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_missing_topic_field(self, mock_gemini, client, auth_headers):
         """Test that a quiz item missing 'topic' causes a 500 mentioning the field"""
@@ -427,6 +427,21 @@ class TestJSONValidation:
         assert response.status_code == 500
         assert "topic" in response.json()["detail"]
 
+    @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
+    def test_answer_not_in_options(self, mock_gemini, client, auth_headers):
+        """Test that a quiz item missing 'answer' causes a 500 mentioning the field"""
+        bad = {"quiz": [{"question": "Q?", "options": ["A", "B"], "answer": "C", "topic": "T"} for _ in range(5)]}
+        mock_gemini.return_value = json.dumps(bad)
+
+        response = client.post(
+            "/api/v1/quiz",
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 500
+        assert "'answer' not in 'options'" in response.json()["detail"]
+    
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_options_as_string_not_list(self, mock_gemini, client, auth_headers):
         """Test that options supplied as a string (not a list) causes a 500"""
