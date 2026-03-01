@@ -303,7 +303,7 @@ async def generate_quiz_questions(
 ):
     """Generate MC Quiz from user notes.  Auth controlled by REQUIRE_AUTH_FOR_GENERATE."""
 
-    prompt = f"""You are a study assistant. Based on the following notes, generate, 5-10 multiple choice questions where: 
+    prompt = f"""You are a study assistant. Based on the following notes, generate 5-10 multiple choice questions where: 
 
 Each question must have a "topic" field. The topic must:
 - Be a short label (2-5 words) that names the specific concept the question is testing
@@ -373,7 +373,6 @@ Return ONLY valid JSON, no markdown or extra text."""
                 raise ValueError(f"Quiz item {i} 'answer' not in 'options'")
             
 
-
             quiz_questions.append(MCQuiz(
                 question=q["question"],
                 options=q["options"],
@@ -382,7 +381,7 @@ Return ONLY valid JSON, no markdown or extra text."""
             ))
         
         if len(quiz_questions) < 5:
-            raise ValueError(f"Expected at least 5 quiz questions, got {len(quiz_questions)}.\n")
+            raise ValueError(f"Expected at least 5 quiz questions, got {len(quiz_questions)}.")
         if len(quiz_questions) > 10:
             raise ValueError(f"Expected at most 10 quiz questions, got {len(quiz_questions)}")
         
