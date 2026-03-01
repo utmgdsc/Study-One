@@ -367,10 +367,10 @@ Return ONLY valid JSON, no markdown or extra text."""
                 raise ValueError(f"Quiz item {i} missing 'options' array")
             if "answer" not in q:
                 raise ValueError(f"Quiz item {i} missing 'answer' field")
+            if "topic" not in q or not q["topic"].strip():
+                raise ValueError(f"Quiz item {i} missing 'topic' field")
             if q["answer"] not in q["options"]:
                 raise ValueError(f"Quiz item {i} 'answer' not in 'options'")
-            if "topic" not in q:
-                raise ValueError(f"Quiz item {i} missing 'topic' field")
             
 
 

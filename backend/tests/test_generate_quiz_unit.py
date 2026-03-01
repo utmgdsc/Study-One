@@ -321,7 +321,7 @@ class TestJSONValidation:
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_fewer_than_5_questions(self, mock_gemini, client, auth_headers):
-        """Test that fewer than 5 questions causes a 500 with a descriptive error"""
+        """Test fewer than 5 questions causes a 500 with a descriptive error"""
         mock_gemini.return_value = json.dumps({"quiz": _make_quiz_payload(4)})
 
         response = client.post(
@@ -363,7 +363,7 @@ class TestJSONValidation:
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_missing_question_field(self, mock_gemini, client, auth_headers):
-        """Test that a quiz item missing 'question' causes a 500 mentioning the field"""
+        """Test a quiz item missing 'question' causes a 500"""
         bad = {"quiz": [{"options": ["A", "B"], "answer": "A", "topic": "T"} for _ in range(5)]}
         mock_gemini.return_value = json.dumps(bad)
 
@@ -378,7 +378,7 @@ class TestJSONValidation:
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_missing_options_field(self, mock_gemini, client, auth_headers):
-        """Test that a quiz item missing 'options' causes a 500 mentioning the field"""
+        """Test a quiz item missing 'options' causes a 500"""
         bad = {"quiz": [{"question": "Q?", "answer": "A", "topic": "T"} for _ in range(5)]}
         mock_gemini.return_value = json.dumps(bad)
 
@@ -393,7 +393,7 @@ class TestJSONValidation:
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_missing_answer_field(self, mock_gemini, client, auth_headers):
-        """Test that a quiz item missing 'answer' causes a 500 mentioning the field"""
+        """Test a quiz item missing 'answer' causes a 500"""
         bad = {"quiz": [{"question": "Q?", "options": ["A", "B"], "topic": "T"} for _ in range(5)]}
         mock_gemini.return_value = json.dumps(bad)
 
@@ -408,7 +408,7 @@ class TestJSONValidation:
     
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_missing_topic_field(self, mock_gemini, client, auth_headers):
-        """Test that a quiz item missing 'topic' causes a 500 mentioning the field"""
+        """Test a quiz item missing 'topic' causes a 500"""
         bad = {"quiz": [{"question": "Q?", "options": ["A", "B"], "answer": "A"} for _ in range(5)]}
         mock_gemini.return_value = json.dumps(bad)
 
@@ -422,8 +422,23 @@ class TestJSONValidation:
         assert "topic" in response.json()["detail"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
+    def test_topic_field_empty(self, mock_gemini, client, auth_headers):
+        """Test a empty quiz item 'topic' causes a 500"""
+        bad = {"quiz": [{"question": "Q?", "options": ["A", "B"], "answer": "A", "topic": " "} for _ in range(5)]}
+        mock_gemini.return_value = json.dumps(bad)
+
+        response = client.post(
+            "/api/v1/quiz",
+            json={"text": VALID_NOTES},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 500
+        assert "topic" in response.json()["detail"]
+
+    @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_answer_not_in_options(self, mock_gemini, client, auth_headers):
-        """Test that a quiz item missing 'answer' causes a 500 mentioning the field"""
+        """Test a quiz item 'answer' not in 'options' causes a 500"""
         bad = {"quiz": [{"question": "Q?", "options": ["A", "B"], "answer": "C", "topic": "T"} for _ in range(5)]}
         mock_gemini.return_value = json.dumps(bad)
 
