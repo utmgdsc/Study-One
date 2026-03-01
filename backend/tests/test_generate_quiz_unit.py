@@ -18,27 +18,22 @@ HOW TO RUN TESTS
 IMPORTANT: You must be in the backend/ directory to run these tests.
 
 Start Virtual Environment:
+    cd backend
+    source venv/bin/activate  # macOS/Linux
+
+    # Install dependencies
+    pip install -r requirements.txt
 
 Run all tests:
-    pytest tests/test_quiz_unit.py -v
-
-Run a specific test:
-    pytest tests/test_quiz_unit.py::TestGenerateQuizEndpoint::test_endpoint_exists -v
-
-================================================================================
-DEFINITION OF DONE COVERAGE
-================================================================================
-
-  ✅ Questions structured      — question, options, answer, topic present
-  ✅ Correct answer stored     — answer value matches one of the options
-  ✅ JSON validated            — 5–10 questions, proper types, field checks
-  ✅ No hallucinated formatting — markdown fences stripped, pure JSON parsed
-  ✅ Endpoint documented       — HTTP method, 422/500 error contracts verified
-
+    pytest tests/test_generate_quiz_unit.py -v
 """
 
 import sys
 import os
+
+# Add the parent directory to the path to import main module
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pytest
 import json
 from unittest.mock import AsyncMock, patch
@@ -49,8 +44,7 @@ from fastapi.testclient import TestClient
 
 from pydantic import ValidationError
 
-# Add the parent directory to the path to import main module
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 
 
 # ---------------------------------------------------------------------------
