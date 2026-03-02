@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/auth-context";
 import { signIn, signUp, signOut, updateUserName } from "@/lib/auth";
 import { getProfile, updateProfile, getFullName, type Profile } from "@/lib/profile";
+import { ContributionHeatmap } from "@/components/profile/contribution-heatmap";
 
 function ProfileNameForm({
   initialFirst,
@@ -86,6 +87,16 @@ function EditIcon({ className }: { className?: string }) {
       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
     </svg>
   );
+}
+
+function formatDayLabel(daysFromToday: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromToday);
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export default function ProfilePage() {
@@ -259,7 +270,7 @@ export default function ProfilePage() {
 
     return (
       <main className="min-h-screen p-6">
-        <div className="mx-auto max-w-md space-y-6">
+        <div className="mx-auto max-w-3xl space-y-6">
           <h1 className="text-2xl font-semibold">Profile</h1>
           <div className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
             {/* Name row: full name + edit icon */}
@@ -342,6 +353,43 @@ export default function ProfilePage() {
                 Sign out
               </button>
             </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="md:col-span-3">
+              <ContributionHeatmap userId={user.id} />
+            </div>
+            <section className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
+              <h2 className="mb-2 text-sm font-semibold">Past quizzes</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                You&apos;ll see your recent quizzes here once tracking is connected.
+              </p>
+              <ul className="space-y-2 text-sm">
+                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
+                  <span>Sample quiz – Active recall</span>
+                  <span className="text-xs">{formatDayLabel(0)}</span>
+                </li>
+                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
+                  <span>Sample quiz – Spaced repetition</span>
+                  <span className="text-xs">{formatDayLabel(-1)}</span>
+                </li>
+              </ul>
+            </section>
+            <section className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
+              <h2 className="mb-2 text-sm font-semibold">Past flashcards</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Flashcard sessions will appear here with quick stats.
+              </p>
+              <ul className="space-y-2 text-sm">
+                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
+                  <span>Sample deck – Biology basics</span>
+                  <span className="text-xs">12 cards</span>
+                </li>
+                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
+                  <span>Sample deck – History dates</span>
+                  <span className="text-xs">20 cards</span>
+                </li>
+              </ul>
+            </section>
           </div>
           {message && (
             <p
