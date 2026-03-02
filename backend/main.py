@@ -8,11 +8,12 @@ from services import GeminiService, get_supabase
 from middleware.auth import require_user, UserPayload, user_for_generate
 from typing import List, Optional
 from enum import Enum
-from prompts.study_gen_v1 import build_study_generation_prompt, validate_quiz_quality, build_flashcard_generation_prompt
-
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+from prompts.study_gen_v1 import build_study_generation_prompt, validate_quiz_quality
+from prompts.flashcard_gen_v1 import build_flashcard_generation_prompt
 
 
 app = FastAPI(title="Socrato")
@@ -102,6 +103,28 @@ class GenerateQuizResponse(BaseModel):
     """
     quiz: list[MCQuiz]
 
+class AnkiRating(str, Enum):
+    AGAIN = "again"
+    HARD = "hard"
+    GOOD = "good"
+    EASY = "easy"
+
+XP_MAP = {
+    AnkiRating.AGAIN: 0,
+    AnkiRating.HARD: 5,
+    AnkiRating.GOOD: 10,
+    AnkiRating.EASY: 15,
+}
+
+class FlashcardReviewRequest(BaseModel):
+    flashcard_set_id: str
+    card_index: int
+    rating: AnkiRating
+
+class FlashcardReviewResponse(BaseModel):
+    xp_awarded: int
+    total_xp: int
+    already_reviewed: bool
 
 
 # ============================================
@@ -434,6 +457,7 @@ class Flashcard(BaseModel):
 
 
 class FlashcardResponse(BaseModel):
+    flashcard_set_id: str
     flashcards: List[Flashcard]
 
 
@@ -482,11 +506,6 @@ def parse_and_validate_flashcards(raw_response: str) -> List[Flashcard]:
 
     return flashcards
 
-
-# ============================================
-# FLASHCARD ROUTE
-# ============================================
-
 @app.post("/api/v1/flashcards", response_model=FlashcardResponse)
 async def generate_flashcards(
     request: FlashcardRequest, 
@@ -501,7 +520,6 @@ async def generate_flashcards(
     prompt = build_flashcard_generation_prompt(
         content=content,
         mode=mode,
-        difficulty=difficulty,
     )
 
     response = await gemini_service.call_gemini(prompt)
@@ -516,13 +534,14 @@ async def generate_flashcards(
     # Store in Supabase
     sb = get_supabase()
     try:
-        sb.table("flashcards").insert({
+        result = sb.table("flashcards").insert({
             "user_id": user["user_id"] if user else "00000000-0000-0000-0000-000000000001",
             "source_text": request.text,
             "topic": request.topic,
             "difficulty": difficulty,
             "cards": [fc.model_dump() for fc in flashcards],
         }).execute()
+        flashcard_set_id = result.data[0]["id"]
     except Exception as e:
         print(f"[flashcards] DB insert failed: {e}")
         raise HTTPException(
@@ -530,4 +549,67 @@ async def generate_flashcards(
             detail="Failed to store flashcards. Please try again."
         )
 
-    return FlashcardResponse(flashcards=flashcards)
+    return FlashcardResponse(flashcard_set_id=flashcard_set_id, flashcards=flashcards)
+
+@app.post("/api/v1/flashcards/review", response_model=FlashcardReviewResponse)
+async def submit_flashcard_review(
+    request: FlashcardReviewRequest,
+    user: Optional[UserPayload] = Depends(user_for_generate),
+):
+    """Record an Anki-style flashcard review and award XP."""
+    sb = get_supabase()
+    user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
+
+    # Check for duplicate review today
+    today = datetime.utcnow().date().isoformat()
+    existing = sb.table("flashcard_reviews") \
+        .select("id") \
+        .eq("user_id", user_id) \
+        .eq("flashcard_set_id", request.flashcard_set_id) \
+        .eq("card_index", request.card_index) \
+        .gte("reviewed_at", today) \
+        .execute()
+
+    if existing.data:
+        # Already reviewed today — return current XP without awarding more
+        stats = sb.table("user_stats").select("xp_total").eq("user_id", user_id).single().execute()
+        return FlashcardReviewResponse(
+            xp_awarded=0,
+            total_xp=stats.data["xp_total"],
+            already_reviewed=True
+        )
+
+    xp = XP_MAP[request.rating]
+
+    # Insert review record
+    sb.table("flashcard_reviews").insert({
+        "user_id": user_id,
+        "flashcard_set_id": request.flashcard_set_id,
+        "card_index": request.card_index,
+        "rating": request.rating.value,
+        "xp_awarded": xp,
+    }).execute()
+
+    # Insert into user_activity for heatmap
+    sb.table("user_activity").insert({
+        "user_id": user_id,
+        "activity_type": "flashcard_review",
+        "xp_awarded": xp,
+        "metadata": {
+            "flashcard_set_id": request.flashcard_set_id,
+            "card_index": request.card_index,
+            "rating": request.rating.value,
+        },
+    }).execute()
+
+    # Update user_stats
+    if xp > 0:
+        sb.rpc("increment_xp", {"p_user_id": user_id, "p_xp": xp}).execute()
+
+    stats = sb.table("user_stats").select("xp_total").eq("user_id", user_id).single().execute()
+
+    return FlashcardReviewResponse(
+        xp_awarded=xp,
+        total_xp=stats.data["xp_total"],
+        already_reviewed=False
+    )

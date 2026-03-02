@@ -12,7 +12,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 class GeminiService:
     """Service for interacting with Google's Gemini AI."""
 
-    def __init__(self, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, model_name: str = "gemini-2.5-flash"):
         """
         Initialize the Gemini service.
 
