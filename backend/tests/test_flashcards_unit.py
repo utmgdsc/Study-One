@@ -51,6 +51,10 @@ from fastapi.testclient import TestClient
 def client():
     return TestClient(app)
 
+@pytest.fixture(autouse=True)
+def mock_auth():
+    with patch("middleware.auth.require_user", return_value={"user_id": "test-user-id"}):
+        yield
 
 # ---------------------------------------------------------------------------
 # Mock data
@@ -107,23 +111,9 @@ class TestFlashcardRequest:
         request = FlashcardRequest(topic="Photosynthesis")
         assert request.topic == "Photosynthesis"
 
-    def test_default_difficulty_is_medium(self):
-        """Test that difficulty defaults to medium"""
+    def test_difficulty_field_not_accepted(self):
         request = FlashcardRequest(text="Some notes here")
-        assert request.difficulty.value == "medium"
-
-    def test_accepts_easy_difficulty(self):
-        request = FlashcardRequest(text="Some notes here", difficulty="easy")
-        assert request.difficulty.value == "easy"
-
-    def test_accepts_hard_difficulty(self):
-        request = FlashcardRequest(text="Some notes here", difficulty="hard")
-        assert request.difficulty.value == "hard"
-
-    def test_rejects_invalid_difficulty(self):
-        """Test that invalid difficulty raises a validation error"""
-        with pytest.raises(Exception):
-            FlashcardRequest(text="Some notes", difficulty="extreme")
+        assert not hasattr(request, "difficulty")
 
     def test_rejects_missing_text_and_topic(self):
         """Test that providing neither text nor topic raises an error"""
@@ -493,7 +483,8 @@ class TestGenerateFlashcardsEndpoint:
 
         assert response.status_code == 200
         body = response.json()
-        assert list(body.keys()) == ["flashcards"]
+        assert "flashcard_set_id" in body
+        assert "flashcards" in body
         first = body["flashcards"][0]
         assert set(first.keys()) == {"question", "answer"}
 
@@ -520,14 +511,6 @@ class TestGenerateFlashcardsEndpoint:
         )
 
         assert response.status_code == 200
-
-    def test_invalid_difficulty_rejected(self, client, auth_headers):
-        response = client.post(
-            "/api/v1/flashcards",
-            json={"text": VALID_NOTES, "difficulty": "extreme"},
-            headers=auth_headers,
-        )
-        assert response.status_code == 422
 
 
 if __name__ == "__main__":
