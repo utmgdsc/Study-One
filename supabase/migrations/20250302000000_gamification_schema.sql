@@ -143,3 +143,42 @@ begin
 end;
 $$;
 
+
+-- 8. Keep updated_at current on updates for badges and user_stats
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists badges_set_updated_at on public.badges;
+create trigger badges_set_updated_at
+  before update on public.badges
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists user_stats_set_updated_at on public.user_stats;
+create trigger user_stats_set_updated_at
+  before update on public.user_stats
+  for each row execute function public.set_updated_at();
+
+
+-- 9. Enforce snake_case naming for activity_type
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'user_activity_activity_type_format'
+      and conrelid = 'public.user_activity'::regclass
+  ) then
+    alter table public.user_activity
+      add constraint user_activity_activity_type_format
+      check (activity_type ~ '^[a-z][a-z0-9_]*$');
+  end if;
+end;
+$$;
+
