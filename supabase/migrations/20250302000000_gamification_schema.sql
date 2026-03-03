@@ -43,6 +43,7 @@ create table if not exists public.user_stats (
 
 comment on table public.user_stats is 'Per-user gamification aggregates: XP, level, streaks.';
 comment on column public.user_stats.user_id is 'Matches auth.users.id; one row per user.';
+comment on column public.user_stats.longest_streak_days is 'CHECK longest_streak_days >= current_streak_days. Any UPDATE that changes current_streak_days must set both columns in one statement, e.g. longest_streak_days = GREATEST(longest_streak_days, new_current), or the constraint will fail.';
 
 
 -- 3. User activity log (raw events that drive XP/streaks)
