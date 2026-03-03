@@ -8,7 +8,7 @@ from services import GeminiService, get_supabase
 from middleware.auth import require_user, UserPayload, user_for_generate
 from typing import List, Optional
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -550,7 +550,7 @@ async def submit_flashcard_review(
     """Record an Anki-style flashcard review and award XP."""
     sb = get_supabase()
     user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
-    today = datetime.utcnow().date().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
 
     # Check for duplicate review today
     existing = sb.table("flashcard_reviews") \
@@ -562,7 +562,8 @@ async def submit_flashcard_review(
         .execute()
 
     if existing.data:
-        stats = sb.table("user_stats").select("xp_total").eq("user_id", user_id).single().execute()
+        stats_result = sb.table("user_stats").select("xp_total").eq("user_id", user_id).maybe_single().execute()
+        total_xp = stats_result.data["xp_total"] if stats_result.data else 0
         return FlashcardReviewResponse(
             xp_awarded=0,
             total_xp=stats.data["xp_total"],
@@ -613,7 +614,7 @@ async def get_session_summary(
     """Return today's ratings for this flashcard set."""
     sb = get_supabase()
     user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
-    today = datetime.utcnow().date().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
 
     result = sb.table("flashcard_reviews") \
         .select("card_index, rating, reviewed_at") \
