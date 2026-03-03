@@ -110,10 +110,10 @@ class AnkiRating(str, Enum):
     EASY = "easy"
 
 XP_MAP = {
-    AnkiRating.AGAIN: 0,
-    AnkiRating.HARD: 5,
-    AnkiRating.GOOD: 10,
-    AnkiRating.EASY: 15,
+    "again": 0,
+    "hard": 5,
+    "good": 10,
+    "easy": 15,
 }
 
 class FlashcardReviewRequest(BaseModel):
@@ -427,16 +427,9 @@ Return ONLY valid JSON, no markdown or extra text."""
 # FLASHCARD SCHEMAS
 # ============================================
 
-class FlashcardDifficulty(str, Enum):
-    EASY = "easy"
-    MEDIUM = "medium"
-    HARD = "hard"
-
-
 class FlashcardRequest(BaseModel):
     text: Optional[str] = None
     topic: Optional[str] = None
-    difficulty: FlashcardDifficulty = FlashcardDifficulty.MEDIUM
 
     @field_validator("text", "topic")
     @classmethod
@@ -515,7 +508,6 @@ async def generate_flashcards(
     """
     content = request.text if request.text else request.topic
     mode = "notes" if request.text else "topic"
-    difficulty = request.difficulty.value
 
     prompt = build_flashcard_generation_prompt(
         content=content,
@@ -538,7 +530,6 @@ async def generate_flashcards(
             "user_id": user["user_id"] if user else "00000000-0000-0000-0000-000000000001",
             "source_text": request.text,
             "topic": request.topic,
-            "difficulty": difficulty,
             "cards": [fc.model_dump() for fc in flashcards],
         }).execute()
         flashcard_set_id = result.data[0]["id"]
@@ -554,14 +545,14 @@ async def generate_flashcards(
 @app.post("/api/v1/flashcards/review", response_model=FlashcardReviewResponse)
 async def submit_flashcard_review(
     request: FlashcardReviewRequest,
-    user: Optional[UserPayload] = Depends(user_for_generate),
+    user: Optional[UserPayload] = Depends(require_user),
 ):
     """Record an Anki-style flashcard review and award XP."""
     sb = get_supabase()
     user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
+    today = datetime.utcnow().date().isoformat()
 
     # Check for duplicate review today
-    today = datetime.utcnow().date().isoformat()
     existing = sb.table("flashcard_reviews") \
         .select("id") \
         .eq("user_id", user_id) \
@@ -571,7 +562,6 @@ async def submit_flashcard_review(
         .execute()
 
     if existing.data:
-        # Already reviewed today — return current XP without awarding more
         stats = sb.table("user_stats").select("xp_total").eq("user_id", user_id).single().execute()
         return FlashcardReviewResponse(
             xp_awarded=0,
@@ -579,7 +569,7 @@ async def submit_flashcard_review(
             already_reviewed=True
         )
 
-    xp = XP_MAP[request.rating]
+    xp = XP_MAP[request.rating.value]
 
     # Insert review record
     sb.table("flashcard_reviews").insert({
@@ -613,3 +603,56 @@ async def submit_flashcard_review(
         total_xp=stats.data["xp_total"],
         already_reviewed=False
     )
+
+
+@app.get("/api/v1/flashcards/{flashcard_set_id}/session-summary")
+async def get_session_summary(
+    flashcard_set_id: str,
+    user: Optional[UserPayload] = Depends(user_for_generate),
+):
+    """Return today's ratings for this flashcard set."""
+    sb = get_supabase()
+    user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
+    today = datetime.utcnow().date().isoformat()
+
+    result = sb.table("flashcard_reviews") \
+        .select("card_index, rating, reviewed_at") \
+        .eq("user_id", user_id) \
+        .eq("flashcard_set_id", flashcard_set_id) \
+        .gte("reviewed_at", today) \
+        .order("reviewed_at", desc=True) \
+        .execute()
+
+    return {"reviews": result.data}
+
+
+RATING_PRIORITY = {"again": 0, "hard": 1, "good": 2, "easy": 3}
+
+@app.get("/api/v1/flashcards/{flashcard_set_id}/history")
+async def get_card_history(
+    flashcard_set_id: str,
+    user: Optional[UserPayload] = Depends(user_for_generate),
+):
+    """Return most recent rating per card, sorted by again -> hard -> good -> easy."""
+    sb = get_supabase()
+    user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
+
+    result = sb.table("flashcard_reviews") \
+        .select("card_index, rating, reviewed_at") \
+        .eq("user_id", user_id) \
+        .eq("flashcard_set_id", flashcard_set_id) \
+        .order("reviewed_at", desc=True) \
+        .execute()
+
+    # Keep only most recent rating per card
+    seen = set()
+    latest_per_card = []
+    for row in result.data:
+        if row["card_index"] not in seen:
+            seen.add(row["card_index"])
+            latest_per_card.append(row)
+
+    # Sort so again/hard come first
+    latest_per_card.sort(key=lambda x: RATING_PRIORITY.get(x["rating"], 99))
+
+    return {"history": latest_per_card}
