@@ -252,6 +252,11 @@ create trigger user_activity_no_update_delete
   before update or delete on public.user_activity
   for each row execute function public.prevent_mutation_on_user_activity();
 
+drop trigger if exists user_activity_no_truncate on public.user_activity;
+create trigger user_activity_no_truncate
+  before truncate on public.user_activity
+  for each statement execute function public.prevent_mutation_on_user_activity();
+
 
 -- 10. Enforce snake_case naming for activity_type
 do $$
