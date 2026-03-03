@@ -19,6 +19,18 @@ comment on table public.badges is 'Static catalog of gamification badges.';
 comment on column public.badges.slug is 'Stable, unique identifier for this badge (used in code).';
 comment on column public.badges.xp_reward is 'XP awarded to the user when this badge is granted.';
 
+-- Enable RLS for badges (public read-only catalog)
+alter table public.badges enable row level security;
+
+drop policy if exists "Anyone can read badges" on public.badges;
+create policy "Anyone can read badges"
+  on public.badges for select
+  using (true);
+
+comment on table public.badges is 'Static catalog of gamification badges.';
+comment on column public.badges.slug is 'Stable, unique identifier for this badge (used in code).';
+comment on column public.badges.xp_reward is 'XP awarded to the user when this badge is granted.';
+
 
 -- 2. Per-user aggregate stats (XP, streaks, levels)
 create table if not exists public.user_stats (
