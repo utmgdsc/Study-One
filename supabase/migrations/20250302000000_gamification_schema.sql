@@ -81,7 +81,8 @@ create index if not exists idx_user_badges_badge_id
   on public.user_badges (badge_id);
 
 
--- 5. Backfill: create a user_stats row for every existing auth user (idempotent)
+-- NOTE: Backfill MUST run before RLS is enabled on user_stats (see section 6).
+-- If you move this block, ensure a permissive INSERT policy exists or disable RLS for backfill.
 insert into public.user_stats (user_id)
 select u.id
 from auth.users u
