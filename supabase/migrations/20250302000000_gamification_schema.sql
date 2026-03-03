@@ -50,7 +50,7 @@ comment on column public.user_stats.longest_streak_days is 'CHECK longest_streak
 create table if not exists public.user_activity (
   id bigserial primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  activity_type text not null check (activity_type ~ '^[a-z][a-z0-9_]*$'),
+  activity_type text not null,
   xp_awarded integer not null default 0 check (xp_awarded >= 0),
   metadata jsonb,
   occurred_at timestamptz not null default now()
