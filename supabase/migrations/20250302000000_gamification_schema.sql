@@ -27,9 +27,6 @@ create policy "Anyone can read badges"
   on public.badges for select
   using (true);
 
-comment on table public.badges is 'Static catalog of gamification badges.';
-comment on column public.badges.slug is 'Stable, unique identifier for this badge (used in code).';
-comment on column public.badges.xp_reward is 'XP awarded to the user when this badge is granted.';
 
 
 -- 2. Per-user aggregate stats (XP, streaks, levels)
