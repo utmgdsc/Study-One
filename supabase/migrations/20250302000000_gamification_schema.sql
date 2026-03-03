@@ -56,7 +56,10 @@ create table if not exists public.user_activity (
   occurred_at timestamptz not null default now() check (occurred_at <= now())
 );
 
-comment on table public.user_activity is 'Immutable log of user activities that can earn XP or affect streaks.';
+comment on table public.user_activity is
+  'Append-only log of user activities. Rows must never be updated or deleted '
+  'by application code; service_role callers are trusted to honour this contract '
+  'as it cannot be enforced via RLS.';
 comment on column public.user_activity.activity_type is 'Application-defined event type (e.g. session_completed, quiz_passed).';
 comment on column public.user_activity.metadata is 'Optional JSON payload with extra context for the activity.';
 
@@ -209,6 +212,7 @@ $$;
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at := now();
@@ -232,7 +236,24 @@ create trigger profiles_set_updated_at
   for each row execute function public.set_updated_at();
 
 
--- 9. Enforce snake_case naming for activity_type
+-- 9. Enforce immutability of user_activity at the DB level (even for service_role)
+create or replace function public.prevent_mutation_on_user_activity()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  raise exception 'user_activity is append-only; % not allowed', TG_OP;
+end;
+$$;
+
+drop trigger if exists user_activity_no_update_delete on public.user_activity;
+create trigger user_activity_no_update_delete
+  before update or delete on public.user_activity
+  for each row execute function public.prevent_mutation_on_user_activity();
+
+
+-- 10. Enforce snake_case naming for activity_type
 do $$
 begin
   if not exists (
