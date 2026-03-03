@@ -50,7 +50,7 @@ comment on column public.user_stats.longest_streak_days is 'CHECK longest_streak
 create table if not exists public.user_activity (
   id bigserial primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  activity_type text not null,
+  activity_type text not null check (activity_type ~ '^[a-z][a-z0-9_]*$'),
   xp_awarded integer not null default 0 check (xp_awarded >= 0),
   metadata jsonb,
   occurred_at timestamptz not null default now()
@@ -188,6 +188,11 @@ create trigger badges_set_updated_at
 drop trigger if exists user_stats_set_updated_at on public.user_stats;
 create trigger user_stats_set_updated_at
   before update on public.user_stats
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists profiles_set_updated_at on public.profiles;
+create trigger profiles_set_updated_at
+  before update on public.profiles
   for each row execute function public.set_updated_at();
 
 
