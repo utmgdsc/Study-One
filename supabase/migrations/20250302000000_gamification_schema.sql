@@ -85,7 +85,7 @@ left join public.user_stats s on s.user_id = u.id
 where s.user_id is null;
 
 
--- 6. RLS: users can read their own stats, activity, and badges
+-- 6. RLS: users can read their own stats, activity, and badges; writes only via service_role
 alter table public.user_stats enable row level security;
 alter table public.user_activity enable row level security;
 alter table public.user_badges enable row level security;
@@ -95,18 +95,45 @@ drop policy if exists "Users can read own stats" on public.user_stats;
 create policy "Users can read own stats"
   on public.user_stats for select
   using (auth.uid() = user_id);
+-- Explicit deny: writes only via service_role (avoids silent no-op on mistaken client writes)
+drop policy if exists "No insert user_stats by role" on public.user_stats;
+create policy "No insert user_stats by role" on public.user_stats for insert with check (false);
+drop policy if exists "No update user_stats by role" on public.user_stats;
+create policy "No update user_stats by role" on public.user_stats for update using (false);
+drop policy if exists "No delete user_stats by role" on public.user_stats;
+create policy "No delete user_stats by role" on public.user_stats for delete using (false);
 
 -- user_activity: allow users to read their own activity only.
 drop policy if exists "Users can read own activity" on public.user_activity;
 create policy "Users can read own activity"
   on public.user_activity for select
   using (auth.uid() = user_id);
+drop policy if exists "No insert user_activity by role" on public.user_activity;
+create policy "No insert user_activity by role" on public.user_activity for insert with check (false);
+drop policy if exists "No update user_activity by role" on public.user_activity;
+create policy "No update user_activity by role" on public.user_activity for update using (false);
+drop policy if exists "No delete user_activity by role" on public.user_activity;
+create policy "No delete user_activity by role" on public.user_activity for delete using (false);
 
 -- user_badges: allow users to read their own badges only.
 drop policy if exists "Users can read own badges" on public.user_badges;
 create policy "Users can read own badges"
   on public.user_badges for select
   using (auth.uid() = user_id);
+drop policy if exists "No insert user_badges by role" on public.user_badges;
+create policy "No insert user_badges by role" on public.user_badges for insert with check (false);
+drop policy if exists "No update user_badges by role" on public.user_badges;
+create policy "No update user_badges by role" on public.user_badges for update using (false);
+drop policy if exists "No delete user_badges by role" on public.user_badges;
+create policy "No delete user_badges by role" on public.user_badges for delete using (false);
+
+-- badges: catalog is read-only for anon/authenticated; writes only via service_role
+drop policy if exists "No insert badges by role" on public.badges;
+create policy "No insert badges by role" on public.badges for insert with check (false);
+drop policy if exists "No update badges by role" on public.badges;
+create policy "No update badges by role" on public.badges for update using (false);
+drop policy if exists "No delete badges by role" on public.badges;
+create policy "No delete badges by role" on public.badges for delete using (false);
 
 
 -- 7. Signup hook: auto-create user_stats row on auth.users insert
