@@ -53,7 +53,7 @@ create table if not exists public.user_activity (
   activity_type text not null,
   xp_awarded integer not null default 0 check (xp_awarded >= 0),
   metadata jsonb,
-  occurred_at timestamptz not null default now()
+  occurred_at timestamptz not null default now() check (occurred_at <= now())
 );
 
 comment on table public.user_activity is 'Immutable log of user activities that can earn XP or affect streaks.';
