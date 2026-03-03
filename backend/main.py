@@ -545,11 +545,11 @@ async def generate_flashcards(
 @app.post("/api/v1/flashcards/review", response_model=FlashcardReviewResponse)
 async def submit_flashcard_review(
     request: FlashcardReviewRequest,
-    user: Optional[UserPayload] = Depends(require_user),
+    user: UserPayload = Depends(require_user),
 ):
     """Record an Anki-style flashcard review and award XP."""
     sb = get_supabase()
-    user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
+    user_id = user["user_id"]
     today = datetime.now(timezone.utc).date().isoformat()
 
     # Check for duplicate review today
@@ -564,46 +564,48 @@ async def submit_flashcard_review(
     if existing.data:
         stats_result = sb.table("user_stats").select("xp_total").eq("user_id", user_id).maybe_single().execute()
         total_xp = stats_result.data["xp_total"] if stats_result.data else 0
-        return FlashcardReviewResponse(
-            xp_awarded=0,
-            total_xp=stats.data["xp_total"],
-            already_reviewed=True
-        )
+        return FlashcardReviewResponse(xp_awarded=0, total_xp=total_xp, already_reviewed=True)
 
     xp = XP_MAP[request.rating.value]
 
-    # Insert review record
-    sb.table("flashcard_reviews").insert({
-        "user_id": user_id,
-        "flashcard_set_id": request.flashcard_set_id,
-        "card_index": request.card_index,
-        "rating": request.rating.value,
-        "xp_awarded": xp,
-    }).execute()
-
-    # Insert into user_activity for heatmap
-    sb.table("user_activity").insert({
-        "user_id": user_id,
-        "activity_type": "flashcard_review",
-        "xp_awarded": xp,
-        "metadata": {
+    try:
+        sb.table("flashcard_reviews").insert({
+            "user_id": user_id,
             "flashcard_set_id": request.flashcard_set_id,
             "card_index": request.card_index,
             "rating": request.rating.value,
-        },
-    }).execute()
+            "xp_awarded": xp,
+        }).execute()
+    except Exception as e:
+        logger.warning("Failed to insert flashcard_reviews: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to record review. Please try again.")
 
-    # Update user_stats
+    try:
+        sb.table("user_activity").insert({
+            "user_id": user_id,
+            "activity_type": "flashcard_review",
+            "xp_awarded": xp,
+            "metadata": {
+                "flashcard_set_id": request.flashcard_set_id,
+                "card_index": request.card_index,
+                "rating": request.rating.value,
+            },
+        }).execute()
+    except Exception as e:
+        logger.warning("Failed to insert user_activity: %s", e)
+        # Non-fatal, review is already recorded, just log it
+
     if xp > 0:
-        sb.rpc("increment_xp", {"p_user_id": user_id, "p_xp": xp}).execute()
+        try:
+            sb.rpc("increment_xp", {"p_user_id": user_id, "p_xp": xp}).execute()
+        except Exception as e:
+            logger.warning("Failed to increment XP: %s", e)
+            # Non-fatal, don't fail the whole request over XP
 
-    stats = sb.table("user_stats").select("xp_total").eq("user_id", user_id).single().execute()
+    stats_result = sb.table("user_stats").select("xp_total").eq("user_id", user_id).maybe_single().execute()
+    total_xp = stats_result.data["xp_total"] if stats_result.data else 0
 
-    return FlashcardReviewResponse(
-        xp_awarded=xp,
-        total_xp=stats.data["xp_total"],
-        already_reviewed=False
-    )
+    return FlashcardReviewResponse(xp_awarded=xp, total_xp=total_xp, already_reviewed=False)
 
 
 @app.get("/api/v1/flashcards/{flashcard_set_id}/session-summary")
