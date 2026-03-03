@@ -38,7 +38,7 @@ create table if not exists public.user_stats (
   xp_total integer not null default 0 check (xp_total >= 0),
   level integer not null default 1 check (level >= 1),
   current_streak_days integer not null default 0 check (current_streak_days >= 0),
-  longest_streak_days integer not null default 0 check (longest_streak_days >= 0),
+  longest_streak_days integer not null default 0 check (longest_streak_days >= current_streak_days),
   last_active_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
