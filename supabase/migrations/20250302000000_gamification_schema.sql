@@ -53,7 +53,7 @@ create table if not exists public.user_activity (
   activity_type text not null,
   xp_awarded integer not null default 0 check (xp_awarded >= 0),
   metadata jsonb,
-  occurred_at timestamptz not null default now() check (occurred_at <= clock_timestamp())
+  occurred_at timestamptz not null default now()
 );
 
 comment on table public.user_activity is
@@ -259,7 +259,30 @@ create trigger user_activity_no_truncate
   for each statement execute function public.prevent_mutation_on_user_activity();
 
 
--- 10. Enforce snake_case naming for activity_type
+-- 10. Prevent future timestamps in user_activity (cannot use VOLATILE functions in CHECK)
+create or replace function public.prevent_future_activity()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.occurred_at > clock_timestamp() then
+    raise exception 'occurred_at cannot be in the future';
+  end if;
+  return new;
+end;
+$$;
+
+alter table public.user_activity
+  drop constraint if exists user_activity_occurred_at_check;
+
+drop trigger if exists user_activity_no_future_timestamp on public.user_activity;
+create trigger user_activity_no_future_timestamp
+  before insert on public.user_activity
+  for each row execute function public.prevent_future_activity();
+
+
+-- 11. Enforce snake_case naming for activity_type
 do $$
 begin
   if not exists (
