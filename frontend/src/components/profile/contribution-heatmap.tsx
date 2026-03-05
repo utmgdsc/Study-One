@@ -80,19 +80,23 @@ export function ContributionHeatmap({
   const [blockMargin, setBlockMargin] = React.useState(4);
   const [range, setRange] = React.useState<string>(String(currentYear));
 
+  const fetchCourses = React.useCallback(async () => {
+    const { data: rows, error } = await supabase
+      .from("user_courses")
+      .select("id, name")
+      .eq("user_id", userId)
+      .order("name", { ascending: true });
+    if (error) throw error;
+    return (rows ?? []) as CourseOption[];
+  }, [userId]);
+
   React.useEffect(() => {
     let cancelled = false;
-    async function run() {
-      setCoursesLoading(true);
-      const { data: rows, error } = await supabase
-        .from("user_courses")
-        .select("id, name")
-        .eq("user_id", userId)
-        .order("name", { ascending: true });
-      if (error) throw error;
-      if (!cancelled) setCourses((rows ?? []) as CourseOption[]);
-    }
-    run()
+    setCoursesLoading(true);
+    fetchCourses()
+      .then((rows) => {
+        if (!cancelled) setCourses(rows);
+      })
       .catch(() => {
         if (!cancelled) setCourses([]);
       })
@@ -102,21 +106,44 @@ export function ContributionHeatmap({
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [fetchCourses]);
 
   React.useEffect(() => {
-    // Simple responsive tuning to keep the 365-day grid readable on mobile.
+    const channel = supabase
+      .channel(`heatmap-courses-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_courses",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          fetchCourses()
+            .then(setCourses)
+            .catch(() => {});
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, fetchCourses]);
+
+  React.useEffect(() => {
+    // Simple responsive tuning to keep the 365-day grid readable with room for scrollbar.
     function update() {
       const w = window.innerWidth;
       if (w < 420) {
-        setBlockSize(9);
-        setBlockMargin(3);
-      } else if (w < 640) {
         setBlockSize(10);
-        setBlockMargin(3);
-      } else {
-        setBlockSize(12);
         setBlockMargin(4);
+      } else if (w < 640) {
+        setBlockSize(11);
+        setBlockMargin(4);
+      } else {
+        setBlockSize(14);
+        setBlockMargin(5);
       }
     }
     update();
@@ -124,53 +151,49 @@ export function ContributionHeatmap({
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      setLoading(true);
-      const today = startOfLocalDay(new Date());
-      const year = Number(range);
-      const start = new Date(year, 0, 1);
-      const end = new Date(year, 11, 31);
+  const fetchHeatmapData = React.useCallback(async () => {
+    const year = Number(range);
+    const start = new Date(year, 0, 1);
+    const end = new Date(year, 11, 31);
+    const empty = makeEmptyRange(start, end);
+    const map = new Map(empty.map((d) => [d.date, { date: d.date, count: 0 }]));
 
-      // Start with an empty range so the calendar always renders.
-      const empty = makeEmptyRange(start, end);
-      const map = new Map(empty.map((d) => [d.date, { date: d.date, count: 0 }]));
+    let q = supabase
+      .from("user_daily_contributions")
+      .select("date, count")
+      .eq("user_id", userId)
+      .gte("date", localDateString(start))
+      .lte("date", localDateString(end))
+      .order("date", { ascending: true });
 
-      let q = supabase
-        .from("user_daily_contributions")
-        .select("date, count")
-        .eq("user_id", userId)
-        .gte("date", localDateString(start))
-        .lte("date", localDateString(end))
-        .order("date", { ascending: true });
-
-      if (selectedCourseId !== "all") {
-        q = q.eq("course_id", selectedCourseId);
-      }
-
-      const { data: rows, error } = await q;
-
-      if (error) throw error;
-
-      for (const r of (rows ?? []) as Array<{ date: string; count: number }>) {
-        // Supabase returns date as `YYYY-MM-DD` for `date` columns.
-        map.set(r.date, { date: r.date, count: Number(r.count) || 0 });
-      }
-
-      const merged = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-      const withLevels = computeLevels(merged);
-      const sum = merged.reduce((acc, d) => acc + (d.count || 0), 0);
-
-      if (!cancelled) {
-        setData(withLevels);
-        setTotal(sum);
-      }
+    if (selectedCourseId !== "all") {
+      q = q.eq("course_id", selectedCourseId);
     }
 
-    run()
+    const { data: rows, error } = await q;
+    if (error) throw error;
+
+    for (const r of (rows ?? []) as Array<{ date: string; count: number }>) {
+      map.set(r.date, { date: r.date, count: Number(r.count) || 0 });
+    }
+
+    const merged = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const withLevels = computeLevels(merged);
+    const sum = merged.reduce((acc, d) => acc + (d.count || 0), 0);
+    return { data: withLevels, total: sum };
+  }, [userId, selectedCourseId, range]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchHeatmapData()
+      .then(({ data: nextData, total: nextTotal }) => {
+        if (!cancelled) {
+          setData(nextData);
+          setTotal(nextTotal);
+        }
+      })
       .catch(() => {
-        // If table isn't ready yet or RLS blocks it, fall back to 0 contributions.
         if (!cancelled) {
           const today = startOfLocalDay(new Date());
           setData(makeEmptyRange(new Date(today.getFullYear(), 0, 1), new Date(today.getFullYear(), 11, 31)));
@@ -184,7 +207,33 @@ export function ContributionHeatmap({
     return () => {
       cancelled = true;
     };
-  }, [userId, selectedCourseId, range]);
+  }, [fetchHeatmapData]);
+
+  React.useEffect(() => {
+    const channel = supabase
+      .channel(`heatmap-contributions-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_daily_contributions",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          fetchHeatmapData()
+            .then(({ data: nextData, total: nextTotal }) => {
+              setData(nextData);
+              setTotal(nextTotal);
+            })
+            .catch(() => {});
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, fetchHeatmapData]);
 
   // White → black scale (darker = more).
   const theme = React.useMemo(
@@ -208,10 +257,10 @@ export function ContributionHeatmap({
   );
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <div className="space-y-1">
-          <CardTitle>{title}</CardTitle>
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-col items-start justify-between gap-2 space-y-0 p-3 sm:flex-row sm:items-center sm:gap-3 sm:p-6">
+        <div className="min-w-0 space-y-1">
+          <CardTitle className="text-sm sm:text-base">{title}</CardTitle>
           {total === 0 && !loading ? (
             <CardDescription>No contributions yet</CardDescription>
           ) : (
@@ -220,21 +269,21 @@ export function ContributionHeatmap({
             </CardDescription>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground" htmlFor="heatmap-range">
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
+          <label className="sr-only text-xs text-muted-foreground" htmlFor="heatmap-range">
             Year
           </label>
           <select
             id="heatmap-range"
             value={range}
             onChange={(e) => setRange(e.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
           >
             <option value={String(currentYear)}>{currentYear}</option>
             <option value={String(currentYear - 1)}>{currentYear - 1}</option>
             <option value={String(currentYear - 2)}>{currentYear - 2}</option>
           </select>
-          <label className="text-xs text-muted-foreground" htmlFor="heatmap-course">
+          <label className="sr-only text-xs text-muted-foreground" htmlFor="heatmap-course">
             Course
           </label>
           <select
@@ -242,7 +291,7 @@ export function ContributionHeatmap({
             value={selectedCourseId}
             onChange={(e) => setSelectedCourseId(e.target.value)}
             disabled={coursesLoading}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:w-auto"
           >
             <option value="all">All contributions</option>
             {courses.map((c) => (
@@ -253,8 +302,8 @@ export function ContributionHeatmap({
           </select>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="rounded-md border border-border bg-background p-3">
+      <CardContent className="min-w-0 p-4 pb-6 sm:p-6 sm:pb-8">
+        <div className="min-w-0 overflow-x-hidden rounded-md border border-border bg-background p-4 pr-6 sm:p-5 sm:pr-8">
           <ActivityCalendar
             data={data}
             theme={theme}
@@ -262,8 +311,8 @@ export function ContributionHeatmap({
             showTotalCount={false}
             showColorLegend
             showMonthLabels
-            weekStart={6}
-            showWeekdayLabels={["sat", "sun", "mon", "tue", "wed", "thu", "fri"]}
+            weekStart={0}
+            showWeekdayLabels={["sun", "mon", "tue", "wed", "thu", "fri", "sat"]}
             labels={{
               legend: { less: "Less", more: "More" },
             }}

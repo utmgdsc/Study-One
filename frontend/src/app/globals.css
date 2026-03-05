@@ -123,3 +123,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide horizontal scrollbar inside contribution heatmap (react-activity-calendar) */
+.react-activity-calendar__scroll-container {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.react-activity-calendar__scroll-container::-webkit-scrollbar {
+  display: none;
+}
