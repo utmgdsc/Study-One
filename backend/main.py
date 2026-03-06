@@ -4,17 +4,16 @@ import re
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
-from services import GeminiService
+from services import GeminiService, get_supabase
 from middleware.auth import require_user, UserPayload, user_for_generate
 from typing import List, Optional
+from enum import Enum
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-# Import the new prompt system
-from prompts.study_gen_v1 import (
-    build_study_generation_prompt,
-    validate_quiz_quality
-)
+from prompts.study_gen_v1 import build_study_generation_prompt, validate_quiz_quality
+from prompts.flashcard_gen_v1 import build_flashcard_generation_prompt
 
 
 app = FastAPI(title="Socrato")
@@ -104,6 +103,28 @@ class GenerateQuizResponse(BaseModel):
     """
     quiz: list[MCQuiz]
 
+class AnkiRating(str, Enum):
+    AGAIN = "again"
+    HARD = "hard"
+    GOOD = "good"
+    EASY = "easy"
+
+XP_MAP = {
+    "again": 0,
+    "hard": 5,
+    "good": 10,
+    "easy": 15,
+}
+
+class FlashcardReviewRequest(BaseModel):
+    flashcard_set_id: str
+    card_index: int
+    rating: AnkiRating
+
+class FlashcardReviewResponse(BaseModel):
+    xp_awarded: int
+    total_xp: int
+    already_reviewed: bool
 
 
 # ============================================
@@ -401,3 +422,240 @@ Return ONLY valid JSON, no markdown or extra text."""
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
         )
+    
+# ============================================
+# FLASHCARD SCHEMAS
+# ============================================
+
+class FlashcardRequest(BaseModel):
+    text: Optional[str] = None
+    topic: Optional[str] = None
+
+    @field_validator("text", "topic")
+    @classmethod
+    def strip_strings(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        return v or None
+
+    def model_post_init(self, __context) -> None:
+        if not self.text and not self.topic:
+            raise ValueError("Either 'text' or 'topic' must be provided.")
+
+
+class Flashcard(BaseModel):
+    question: str
+    answer: str
+
+
+class FlashcardResponse(BaseModel):
+    flashcard_set_id: str
+    flashcards: List[Flashcard]
+
+
+# ============================================
+# FLASHCARD HELPERS
+# ============================================
+
+def parse_and_validate_flashcards(raw_response: str) -> List[Flashcard]:
+    """Parse Gemini JSON and validate structure for flashcards."""
+    # Use the existing cleaning logic from clean_response
+    cleaned = clean_response(raw_response)
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"[flashcards] Failed to parse JSON: {e}")
+        print(f"[flashcards] Raw response: {raw_response}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to parse AI response as JSON. Please try again."
+        )
+
+    flashcards_raw = data.get("flashcards")
+    if not isinstance(flashcards_raw, list):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid AI response: 'flashcards' must be an array."
+        )
+    if len(flashcards_raw) != 10:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid AI response: expected 10 flashcards, got {len(flashcards_raw)}."
+        )
+
+    flashcards = []
+    for i, fc in enumerate(flashcards_raw):
+        if not isinstance(fc, dict):
+            raise HTTPException(status_code=500, detail=f"Flashcard {i} is not an object.")
+        q = fc.get("question")
+        a = fc.get("answer")
+        if not isinstance(q, str) or not q.strip():
+            raise HTTPException(status_code=500, detail=f"Flashcard {i} missing valid 'question'.")
+        if not isinstance(a, str) or not a.strip():
+            raise HTTPException(status_code=500, detail=f"Flashcard {i} missing valid 'answer'.")
+        flashcards.append(Flashcard(question=q.strip(), answer=a.strip()))
+
+    return flashcards
+
+@app.post("/api/v1/flashcards", response_model=FlashcardResponse)
+async def generate_flashcards(
+    request: FlashcardRequest, 
+    user: Optional[UserPayload] = Depends(user_for_generate)):
+    """
+    Generate 10 Q/A flashcards from notes or a topic, store in Supabase.
+    """
+    content = request.text if request.text else request.topic
+    mode = "notes" if request.text else "topic"
+
+    prompt = build_flashcard_generation_prompt(
+        content=content,
+        mode=mode,
+    )
+
+    response = await gemini_service.call_gemini(prompt)
+    if response is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate flashcards. Please try again."
+        )
+
+    flashcards = parse_and_validate_flashcards(response)
+
+    # Store in Supabase
+    sb = get_supabase()
+    try:
+        result = sb.table("flashcards").insert({
+            "user_id": user["user_id"] if user else "00000000-0000-0000-0000-000000000001",
+            "source_text": request.text,
+            "topic": request.topic,
+            "cards": [fc.model_dump() for fc in flashcards],
+        }).execute()
+        flashcard_set_id = result.data[0]["id"]
+    except Exception as e:
+        print(f"[flashcards] DB insert failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to store flashcards. Please try again."
+        )
+
+    return FlashcardResponse(flashcard_set_id=flashcard_set_id, flashcards=flashcards)
+
+@app.post("/api/v1/flashcards/review", response_model=FlashcardReviewResponse)
+async def submit_flashcard_review(
+    request: FlashcardReviewRequest,
+    user: UserPayload = Depends(require_user),
+):
+    """Record an Anki-style flashcard review and award XP."""
+    sb = get_supabase()
+    user_id = user["user_id"]
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    # Check for duplicate review today
+    existing = sb.table("flashcard_reviews") \
+        .select("id") \
+        .eq("user_id", user_id) \
+        .eq("flashcard_set_id", request.flashcard_set_id) \
+        .eq("card_index", request.card_index) \
+        .gte("reviewed_at", today) \
+        .execute()
+
+    if existing.data:
+        stats_result = sb.table("user_stats").select("xp_total").eq("user_id", user_id).maybe_single().execute()
+        total_xp = stats_result.data["xp_total"] if stats_result.data else 0
+        return FlashcardReviewResponse(xp_awarded=0, total_xp=total_xp, already_reviewed=True)
+
+    xp = XP_MAP[request.rating.value]
+
+    try:
+        sb.table("flashcard_reviews").insert({
+            "user_id": user_id,
+            "flashcard_set_id": request.flashcard_set_id,
+            "card_index": request.card_index,
+            "rating": request.rating.value,
+            "xp_awarded": xp,
+        }).execute()
+    except Exception as e:
+        logger.warning("Failed to insert flashcard_reviews: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to record review. Please try again.")
+
+    try:
+        sb.table("user_activity").insert({
+            "user_id": user_id,
+            "activity_type": "flashcard_review",
+            "xp_awarded": xp,
+            "metadata": {
+                "flashcard_set_id": request.flashcard_set_id,
+                "card_index": request.card_index,
+                "rating": request.rating.value,
+            },
+        }).execute()
+    except Exception as e:
+        logger.warning("Failed to insert user_activity: %s", e)
+        # Non-fatal, review is already recorded, just log it
+
+    if xp > 0:
+        try:
+            sb.rpc("increment_xp", {"p_user_id": user_id, "p_xp": xp}).execute()
+        except Exception as e:
+            logger.warning("Failed to increment XP: %s", e)
+            # Non-fatal, don't fail the whole request over XP
+
+    stats_result = sb.table("user_stats").select("xp_total").eq("user_id", user_id).maybe_single().execute()
+    total_xp = stats_result.data["xp_total"] if stats_result.data else 0
+
+    return FlashcardReviewResponse(xp_awarded=xp, total_xp=total_xp, already_reviewed=False)
+
+
+@app.get("/api/v1/flashcards/{flashcard_set_id}/session-summary")
+async def get_session_summary(
+    flashcard_set_id: str,
+    user: Optional[UserPayload] = Depends(user_for_generate),
+):
+    """Return today's ratings for this flashcard set."""
+    sb = get_supabase()
+    user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    result = sb.table("flashcard_reviews") \
+        .select("card_index, rating, reviewed_at") \
+        .eq("user_id", user_id) \
+        .eq("flashcard_set_id", flashcard_set_id) \
+        .gte("reviewed_at", today) \
+        .order("reviewed_at", desc=True) \
+        .execute()
+
+    return {"reviews": result.data}
+
+
+RATING_PRIORITY = {"again": 0, "hard": 1, "good": 2, "easy": 3}
+
+@app.get("/api/v1/flashcards/{flashcard_set_id}/history")
+async def get_card_history(
+    flashcard_set_id: str,
+    user: Optional[UserPayload] = Depends(user_for_generate),
+):
+    """Return most recent rating per card, sorted by again -> hard -> good -> easy."""
+    sb = get_supabase()
+    user_id = user["user_id"] if user else "00000000-0000-0000-0000-000000000001"
+
+    result = sb.table("flashcard_reviews") \
+        .select("card_index, rating, reviewed_at") \
+        .eq("user_id", user_id) \
+        .eq("flashcard_set_id", flashcard_set_id) \
+        .order("reviewed_at", desc=True) \
+        .execute()
+
+    # Keep only most recent rating per card
+    seen = set()
+    latest_per_card = []
+    for row in result.data:
+        if row["card_index"] not in seen:
+            seen.add(row["card_index"])
+            latest_per_card.append(row)
+
+    # Sort so again/hard come first
+    latest_per_card.sort(key=lambda x: RATING_PRIORITY.get(x["rating"], 99))
+
+    return {"history": latest_per_card}
