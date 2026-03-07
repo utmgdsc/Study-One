@@ -235,22 +235,22 @@ export function ContributionHeatmap({
     };
   }, [userId, fetchHeatmapData]);
 
-  // White → black scale (darker = more).
+  // White for nothing, darker the more (level 0 = no activity, 1–4 = more).
   const theme = React.useMemo(
     () => ({
       light: [
-        "#ffffff",
-        "#e5e5e5",
-        "#bdbdbd",
-        "#737373",
-        "#000000",
+        "#ffffff", // level 0 - no activity
+        "#e2e8f0",
+        "#94a3b8",
+        "#475569",
+        "#1e3a5f", // most activity - navy
       ],
       dark: [
-        "#ffffff",
-        "#e5e5e5",
-        "#bdbdbd",
-        "#737373",
-        "#000000",
+        "#ffffff", // level 0 - no activity
+        "#cbd5e1",
+        "#64748b",
+        "#334155",
+        "#0f172a", // most activity - darkest
       ],
     }),
     [],
@@ -322,13 +322,11 @@ export function ContributionHeatmap({
               },
             }}
             renderBlock={(block, activity) => {
-              // react-activity-calendar sets stroke via inline style; override style (not SVG attrs)
-              // so borders remain visible when blocks are white.
               const prevStyle = (block.props as { style?: React.CSSProperties }).style;
               return React.cloneElement(block, {
                 style: {
                   ...prevStyle,
-                  stroke: "rgba(0,0,0,0.28)",
+                  stroke: "rgba(15, 23, 42, 0.2)",
                   strokeWidth: 1,
                   shapeRendering: "crispEdges",
                 },

@@ -319,6 +319,8 @@ export default function ProfilePage() {
   const [editingName, setEditingName] = useState(false);
   const [flashcardsOpen, setFlashcardsOpen] = useState(false);
   const [selectedDeck, setSelectedDeck] = useState<{ title: string; cards: number } | null>(null);
+  const [pastQuizzesViewAllOpen, setPastQuizzesViewAllOpen] = useState(false);
+  const [pastFlashcardsViewAllOpen, setPastFlashcardsViewAllOpen] = useState(false);
   const [stats, setStats] = useState<ContributionStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [badgePopup, setBadgePopup] = useState<BadgeDef | null>(null);
@@ -730,99 +732,57 @@ export default function ProfilePage() {
             </div>
             <section className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
               <h2 className="mb-1.5 text-sm font-semibold sm:mb-2">Past quizzes</h2>
-              <p className="mb-2 text-xs text-muted-foreground sm:mb-3">
-                You&apos;ll see your recent quizzes here once tracking is connected.
+              <p className="mb-3 text-xs text-muted-foreground">
+                View all your previous quiz attempts.
               </p>
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
-                  <span>Sample quiz – Active recall</span>
-                  <span className="text-xs">{formatDayLabel(0)}</span>
-                </li>
-                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
-                  <span>Sample quiz – Spaced repetition</span>
-                  <span className="text-xs">{formatDayLabel(-1)}</span>
-                </li>
-              </ul>
+              <button
+                type="button"
+                onClick={() => setPastQuizzesViewAllOpen(true)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                View all
+              </button>
             </section>
             <section className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
               <h2 className="mb-1.5 text-sm font-semibold sm:mb-2">Past flashcards</h2>
-              <p className="mb-2 text-xs text-muted-foreground sm:mb-3">
-                Flashcard sessions will appear here with quick stats.
+              <p className="mb-3 text-xs text-muted-foreground">
+                View all your flashcard decks and sessions.
               </p>
-              <ul className="space-y-2 text-sm">
-                {[
-                  { title: "Sample deck – Biology basics", cards: 12 },
-                  { title: "Sample deck – History dates", cards: 20 },
-                ].map((deck) => (
-                  <li key={deck.title}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedDeck(deck);
-                        setFlashcardsOpen(true);
-                      }}
-                      className="flex w-full items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      <span className="truncate">{deck.title}</span>
-                      <span className="ml-3 shrink-0 text-xs">{deck.cards} cards</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <button
+                type="button"
+                onClick={() => setPastFlashcardsViewAllOpen(true)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                View all
+              </button>
             </section>
           </div>
           <FullScreenModal
-            open={flashcardsOpen}
-            title={selectedDeck?.title ?? "Flashcards"}
-            onClose={() => setFlashcardsOpen(false)}
+            open={pastQuizzesViewAllOpen}
+            title="All past quizzes"
+            onClose={() => setPastQuizzesViewAllOpen(false)}
           >
             <div className="mx-auto w-full max-w-3xl space-y-4">
-              <div className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Deck</p>
-                    <p className="text-base font-semibold">{selectedDeck?.title ?? "—"}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Cards</p>
-                    <p className="text-base font-semibold">{selectedDeck?.cards ?? 0}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
-                <h3 className="text-sm font-semibold">Recent sessions</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  This will show your past flashcard sessions once backend tracking is connected.
-                </p>
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-                    <span>Sample session</span>
-                    <span className="text-xs">{formatDayLabel(-2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-                    <span>Sample session</span>
-                    <span className="text-xs">{formatDayLabel(-6)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
-                <h3 className="text-sm font-semibold">Deck preview</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  You’ll be able to review cards here (full-screen) once the flashcard endpoints are wired up.
-                </p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-md border border-border bg-background p-3">
-                    <p className="text-xs text-muted-foreground">Front</p>
-                    <p className="mt-1 text-sm">What is a cell?</p>
-                  </div>
-                  <div className="rounded-md border border-border bg-background p-3">
-                    <p className="text-xs text-muted-foreground">Back</p>
-                    <p className="mt-1 text-sm text-muted-foreground">The basic unit of life.</p>
-                  </div>
-                </div>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                No quizzes to show. Your quiz history will appear here once you complete some quizzes.
+              </p>
+              <ul className="space-y-2 text-sm">
+                {/* Fetched quizzes will be listed here */}
+              </ul>
+            </div>
+          </FullScreenModal>
+          <FullScreenModal
+            open={pastFlashcardsViewAllOpen}
+            title="All past flashcards"
+            onClose={() => setPastFlashcardsViewAllOpen(false)}
+          >
+            <div className="mx-auto w-full max-w-3xl space-y-4">
+              <p className="text-sm text-muted-foreground">
+                No flashcards to show. Your decks and sessions will appear here once you use flashcards.
+              </p>
+              <ul className="space-y-2 text-sm">
+                {/* Fetched decks/sessions will be listed here */}
+              </ul>
             </div>
           </FullScreenModal>
           {message && (
