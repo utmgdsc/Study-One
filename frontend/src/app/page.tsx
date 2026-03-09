@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyMaterials, generateStudyPack } from "@/lib/api";
+import { generateStudyPack } from "@/lib/api";
 import { GenerateResponse, QuizQuestion } from "@/types/api";
 import { useAuth } from "@/context/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -94,7 +94,6 @@ export default function Home() {
           },
         ],
       });
-
     }, 3000);
   }
 

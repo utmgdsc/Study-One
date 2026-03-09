@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from services import GeminiService, get_supabase
+from services.gamification import award_flashcard_session_xp, award_quiz_completion_xp
 from middleware.auth import require_user, UserPayload, user_for_generate
 from typing import List, Optional
 from enum import Enum
@@ -112,13 +113,6 @@ class AnkiRating(str, Enum):
     GOOD = "good"
     EASY = "easy"
 
-XP_MAP = {
-    "again": 0,
-    "hard": 5,
-    "good": 10,
-    "easy": 15,
-}
-
 class FlashcardReviewRequest(BaseModel):
     flashcard_set_id: str
     card_index: int
@@ -128,6 +122,32 @@ class FlashcardReviewResponse(BaseModel):
     xp_awarded: int
     total_xp: int
     already_reviewed: bool
+
+
+class QuizResultRequest(BaseModel):
+    """Request body for POST /api/v1/quiz/result - submit quiz completion for XP."""
+    correct: int
+    total: int
+    quiz_id: Optional[str] = None
+
+
+class QuizResultResponse(BaseModel):
+    """Response from quiz completion - XP and streak via gamification engine."""
+    applied: bool
+    xp_awarded: int
+    user_stats: dict
+
+
+class FlashcardSessionCompleteRequest(BaseModel):
+    """Request body for POST /api/v1/flashcards/session-complete."""
+    flashcard_set_id: str
+
+
+class FlashcardSessionCompleteResponse(BaseModel):
+    """Response from flashcard session completion."""
+    applied: bool
+    xp_awarded: int
+    user_stats: dict
 
 
 # ============================================
@@ -426,7 +446,33 @@ Return ONLY valid JSON, no markdown or extra text."""
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
         )
-    
+
+
+@app.post("/api/v1/quiz/result", response_model=QuizResultResponse)
+async def submit_quiz_result(
+    request: QuizResultRequest,
+    user: UserPayload = Depends(require_user),
+):
+    """Submit quiz completion for XP. Awards 25 XP base + 15 bonus for perfect score. Idempotent per day."""
+    try:
+        result = award_quiz_completion_xp(
+            user_id=user["user_id"],
+            correct=request.correct,
+            total=request.total,
+            quiz_id=request.quiz_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        logger.warning("Quiz result apply_activity failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to record quiz result.")
+    return QuizResultResponse(
+        applied=result["applied"],
+        xp_awarded=result["xp_awarded"],
+        user_stats=result["user_stats"],
+    )
+
+
 # ============================================
 # FLASHCARD SCHEMAS
 # ============================================
@@ -546,12 +592,34 @@ async def generate_flashcards(
 
     return FlashcardResponse(flashcard_set_id=flashcard_set_id, flashcards=flashcards)
 
+
+@app.post("/api/v1/flashcards/session-complete", response_model=FlashcardSessionCompleteResponse)
+async def complete_flashcard_session(
+    request: FlashcardSessionCompleteRequest,
+    user: UserPayload = Depends(require_user),
+):
+    """Record flashcard session completion for XP. Awards 10 XP. Idempotent per day."""
+    try:
+        result = award_flashcard_session_xp(
+            user_id=user["user_id"],
+            session_id=request.flashcard_set_id,
+        )
+    except RuntimeError as e:
+        logger.warning("Flashcard session apply_activity failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to record session.")
+    return FlashcardSessionCompleteResponse(
+        applied=result["applied"],
+        xp_awarded=result["xp_awarded"],
+        user_stats=result["user_stats"],
+    )
+
+
 @app.post("/api/v1/flashcards/review", response_model=FlashcardReviewResponse)
 async def submit_flashcard_review(
     request: FlashcardReviewRequest,
     user: UserPayload = Depends(require_user),
 ):
-    """Record an Anki-style flashcard review and award XP."""
+    """Record an Anki-style flashcard review. XP is awarded via POST /api/v1/flashcards/session-complete."""
     sb = get_supabase()
     user_id = user["user_id"]
     today = datetime.now(timezone.utc).date().isoformat()
@@ -570,46 +638,22 @@ async def submit_flashcard_review(
         total_xp = stats_result.data["xp_total"] if stats_result.data else 0
         return FlashcardReviewResponse(xp_awarded=0, total_xp=total_xp, already_reviewed=True)
 
-    xp = XP_MAP[request.rating.value]
-
     try:
         sb.table("flashcard_reviews").insert({
             "user_id": user_id,
             "flashcard_set_id": request.flashcard_set_id,
             "card_index": request.card_index,
             "rating": request.rating.value,
-            "xp_awarded": xp,
+            "xp_awarded": 0,
         }).execute()
     except Exception as e:
         logger.warning("Failed to insert flashcard_reviews: %s", e)
         raise HTTPException(status_code=500, detail="Failed to record review. Please try again.")
 
-    try:
-        sb.table("user_activity").insert({
-            "user_id": user_id,
-            "activity_type": "flashcard_review",
-            "xp_awarded": xp,
-            "metadata": {
-                "flashcard_set_id": request.flashcard_set_id,
-                "card_index": request.card_index,
-                "rating": request.rating.value,
-            },
-        }).execute()
-    except Exception as e:
-        logger.warning("Failed to insert user_activity: %s", e)
-        # Non-fatal, review is already recorded, just log it
-
-    if xp > 0:
-        try:
-            sb.rpc("increment_xp", {"p_user_id": user_id, "p_xp": xp}).execute()
-        except Exception as e:
-            logger.warning("Failed to increment XP: %s", e)
-            # Non-fatal, don't fail the whole request over XP
-
     stats_result = sb.table("user_stats").select("xp_total").eq("user_id", user_id).maybe_single().execute()
     total_xp = stats_result.data["xp_total"] if stats_result.data else 0
 
-    return FlashcardReviewResponse(xp_awarded=xp, total_xp=total_xp, already_reviewed=False)
+    return FlashcardReviewResponse(xp_awarded=0, total_xp=total_xp, already_reviewed=False)
 
 
 @app.get("/api/v1/flashcards/{flashcard_set_id}/session-summary")
