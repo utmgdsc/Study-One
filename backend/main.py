@@ -79,6 +79,9 @@ class QuizQuestion(BaseModel):
     question: str
     options: List[str]
     answer: str
+    # Simple one-paragraph explanation of why the correct answer is right
+    # and why the other options are wrong.
+    correctionExplanation: Optional[str] = None
 
 
 class GenerateResponse(BaseModel):
@@ -148,7 +151,8 @@ def validate_data(data):
         quiz_questions.append(QuizQuestion(
             question=q["question"],
             options=q["options"],
-            answer=q["answer"]
+            answer=q["answer"],
+            correctionExplanation=q.get("correctionExplanation")
         ))
 
     return quiz_questions

@@ -60,7 +60,8 @@ OUTPUT_FORMAT = """Output format - follow exactly:
         {
             "question": "Question text?",
             "options": ["A", "B", "C", "D"],
-            "answer": "A"
+            "answer": "A",
+            "correctionExplanation": "Very short, simple explanation of why A is correct and why B, C, and D are wrong."
         }
     ]
 }
@@ -72,7 +73,11 @@ Rules:
 - "summary" must be an array of 3-7 strings
 - "quiz" must be an array of 3-5 question objects
 - Each question must have exactly 4 options
-- "answer" must be one of the 4 options provided"""
+- "answer" must be one of the 4 options provided
+- Each question's correctionExplanation MUST be a single 1–3 sentence paragraph that:
+  - Clearly states why the correct answer is correct
+  - Briefly mentions why the other options are wrong
+  - Uses simple, student-friendly language"""
 
 
 # ============================================
@@ -90,17 +95,20 @@ EXAMPLES = """[ {
         {
             "question": "Where does photosynthesis take place in plant cells?",
             "options": ["Mitochondria", "Chloroplasts", "Nucleus", "Cell wall"],
-            "answer": "Chloroplasts"
+            "answer": "Chloroplasts",
+            "correctionExplanation": "Photosynthesis happens in the chloroplasts because they contain chlorophyll to capture light. The mitochondria make energy in a different way, the nucleus stores DNA, and the cell wall simply gives the cell structure."
         },
         {
             "question": "Which of the following is a product of photosynthesis?",
             "options": ["Carbon dioxide", "Water", "Oxygen", "Nitrogen"],
-            "answer": "Oxygen"
+            "answer": "Oxygen",
+            "correctionExplanation": "Plants use carbon dioxide and water to make glucose and release oxygen as a waste gas. Water and carbon dioxide are inputs, and nitrogen is not a direct product of photosynthesis."
         },
         {
             "question": "What is the primary energy source for photosynthesis?",
             "options": ["Heat", "Sunlight", "Chemical energy", "Wind"],
-            "answer": "Sunlight"
+            "answer": "Sunlight",
+            "correctionExplanation": "Photosynthesis uses sunlight as the main energy source to power the reactions in the chloroplasts. Heat, chemical energy, and wind are not the direct energy used in this process."
         }
     ]
 }, 
@@ -114,17 +122,20 @@ EXAMPLES = """[ {
         {
             "question": "What happens during evaporation in the water cycle?",
             "options": ["Water falls as rain", "Water becomes vapor", "Clouds form", "Ice melts"],
-            "answer": "Water becomes vapor"
+            "answer": "Water becomes vapor",
+            "correctionExplanation": "During evaporation, liquid water warms up and changes into water vapor. It does not fall as rain, form clouds directly, or melt from ice in this step."
         },
         {
             "question": "Which process forms clouds in the water cycle?",
             "options": ["Evaporation", "Precipitation", "Condensation", "Filtration"],
-            "answer": "Condensation"
+            "answer": "Condensation",
+            "correctionExplanation": "Clouds form when water vapor cools and condenses into tiny droplets, which is called condensation. Evaporation turns liquid into vapor, precipitation is when water falls from clouds, and filtration is unrelated to the water cycle in the sky."
         },
         {
             "question": "What are the main forms of precipitation?",
             "options": ["Steam and vapor", "Rain and snow", "Clouds and fog", "Rivers and lakes"],
-            "answer": "Rain and snow"
+            "answer": "Rain and snow",
+            "correctionExplanation": "Precipitation usually falls as rain or snow. Steam and vapor describe gases, clouds and fog are collections of tiny droplets in the air, and rivers and lakes are bodies of water on the ground, not falling from the sky."
         }
     ]
 } ]"""
