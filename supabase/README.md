@@ -8,6 +8,8 @@
    - Run `migrations/20250226000000_profiles_first_last_name.sql`  
    - Run `migrations/20250225000000_fix_profiles_email_and_trigger.sql`  
    - Run `migrations/20250227000000_profiles_insert_policy.sql`  
+   - Run `migrations/20250302000000_user_daily_contributions.sql` (heatmap data)  
+   - Run `migrations/20250302001000_user_courses_and_course_filter.sql` (heatmap course dropdown)  
    - (Optional for Canvas) Run `migrations/20250228000000_profiles_canvas_api_key.sql`
 
 2. **Configure Forgot Password redirect URL**  

@@ -2,10 +2,13 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import Link from "next/link";
+import { Award, Flame, Star, X } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { signIn, signUp, signOut, updateUserName } from "@/lib/auth";
 import { getProfile, updateProfile, getFullName, type Profile } from "@/lib/profile";
 import { ContributionHeatmap } from "@/components/profile/contribution-heatmap";
+import { supabase } from "@/lib/supabase";
+import { fetchContributionStats, type ContributionStats } from "@/lib/contribution-stats";
 
 function ProfileNameForm({
   initialFirst,
@@ -89,6 +92,76 @@ function EditIcon({ className }: { className?: string }) {
   );
 }
 
+/** Placeholder graphic for badge (medal shape). Use currentColor so parent can style it. */
+function BadgePlaceholderIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <circle cx="12" cy="10" r="6" />
+      <path d="M12 16v4M9 20h6" />
+      <path d="M8 6L7 4h2l1 2M16 6l1-2h2l-1 2" />
+    </svg>
+  );
+}
+
+function BadgePopup({
+  badge,
+  onClose,
+}: {
+  badge: BadgeDef;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40 bg-black/50"
+        aria-hidden
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="badge-popup-title"
+        className="fixed left-1/2 top-1/2 z-50 w-[min(90vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-4 text-card-foreground shadow-lg"
+      >
+        <div className="mx-auto mb-4 flex aspect-square w-36 items-center justify-center rounded-lg border border-dashed border-border bg-muted/50 text-muted-foreground sm:w-44">
+          <BadgePlaceholderIcon className="h-20 w-20 opacity-70 sm:h-24 sm:w-24" />
+        </div>
+        <h3 id="badge-popup-title" className="text-base font-semibold">
+          {badge.name}
+        </h3>
+        <p className="mt-2 text-sm text-muted-foreground">{badge.description}</p>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function formatDayLabel(daysFromToday: number) {
   const d = new Date();
   d.setDate(d.getDate() + daysFromToday);
@@ -97,6 +170,137 @@ function formatDayLabel(daysFromToday: number) {
     month: "short",
     day: "numeric",
   });
+}
+
+type BadgeDef = { name: string; description: string; earned: (stats: ContributionStats | null) => boolean };
+const BADGES: BadgeDef[] = [
+  {
+    name: "Getting started",
+    description: "You're on your way! Complete quizzes and flashcards to earn more badges.",
+    earned: (stats) => (stats?.totalXp ?? 0) >= 0,
+  },
+  {
+    name: "First XP",
+    description: "Earn your first XP by completing a quiz or flashcard session.",
+    earned: (stats) => (stats?.totalXp ?? 0) > 0,
+  },
+  {
+    name: "50 XP",
+    description: "Reach 50 total XP from quizzes and flashcards.",
+    earned: (stats) => (stats?.totalXp ?? 0) >= 50,
+  },
+  {
+    name: "100 XP",
+    description: "Reach 100 total XP.",
+    earned: (stats) => (stats?.totalXp ?? 0) >= 100,
+  },
+  {
+    name: "500 XP",
+    description: "Reach 500 total XP.",
+    earned: (stats) => (stats?.totalXp ?? 0) >= 500,
+  },
+  {
+    name: "7-day streak",
+    description: "Study at least one day for 7 days in a row.",
+    earned: (stats) => (stats?.currentStreak ?? 0) >= 7,
+  },
+  {
+    name: "14-day streak",
+    description: "Keep a 14-day study streak.",
+    earned: (stats) => (stats?.currentStreak ?? 0) >= 14,
+  },
+  {
+    name: "30-day streak",
+    description: "Maintain a 30-day study streak.",
+    earned: (stats) => (stats?.currentStreak ?? 0) >= 30,
+  },
+  {
+    name: "Consistency",
+    description: "Your longest streak reached 14 days.",
+    earned: (stats) => (stats?.longestStreak ?? 0) >= 14,
+  },
+  {
+    name: "On a roll",
+    description: "Your longest streak reached 30 days.",
+    earned: (stats) => (stats?.longestStreak ?? 0) >= 30,
+  },
+  {
+    name: "Scholar",
+    description: "Reach 1,000 total XP.",
+    earned: (stats) => (stats?.totalXp ?? 0) >= 1000,
+  },
+  {
+    name: "Mastery",
+    description: "Reach 5,000 total XP.",
+    earned: (stats) => (stats?.totalXp ?? 0) >= 5000,
+  },
+  {
+    name: "Legend",
+    description: "Reach 10,000 total XP.",
+    earned: (stats) => (stats?.totalXp ?? 0) >= 10000,
+  },
+];
+
+function FullScreenModal({
+  open,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+        aria-label="Close modal"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="absolute inset-0 bg-background text-foreground"
+      >
+        <div className="flex h-full flex-col">
+          <header className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold">{title}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </header>
+          <div className="flex-1 overflow-y-auto p-4">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ProfilePage() {
@@ -113,6 +317,13 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
+  const [flashcardsOpen, setFlashcardsOpen] = useState(false);
+  const [selectedDeck, setSelectedDeck] = useState<{ title: string; cards: number } | null>(null);
+  const [pastQuizzesViewAllOpen, setPastQuizzesViewAllOpen] = useState(false);
+  const [pastFlashcardsViewAllOpen, setPastFlashcardsViewAllOpen] = useState(false);
+  const [stats, setStats] = useState<ContributionStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [badgePopup, setBadgePopup] = useState<BadgeDef | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -134,6 +345,73 @@ export default function ProfilePage() {
       });
     return () => {
       cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`profile-data-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${user.id}`,
+        },
+        () => {
+          getProfile(user.id)
+            .then(setProfile)
+            .catch(() => {});
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setStats(null);
+      setStatsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const userId = user.id;
+    async function refresh() {
+      setStatsLoading(true);
+      try {
+        const next = await fetchContributionStats(userId);
+        if (!cancelled) setStats(next);
+      } finally {
+        if (!cancelled) setStatsLoading(false);
+      }
+    }
+
+    refresh().catch(() => {});
+
+    const channel = supabase
+      .channel(`profile-stats-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_daily_contributions",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          refresh().catch(() => {});
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
     };
   }, [user]);
 
@@ -246,7 +524,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen p-6">
+      <main className="min-h-screen p-4 sm:p-6">
         <div className="mx-auto max-w-md text-center text-muted-foreground">
           Loading…
         </div>
@@ -269,10 +547,10 @@ export default function ProfilePage() {
       (typeof fullNameFromMeta === "string" && fullNameFromMeta !== "—" ? fullNameFromMeta.split(/\s+/).slice(1).join(" ") : "");
 
     return (
-      <main className="min-h-screen p-6">
-        <div className="mx-auto max-w-3xl space-y-6">
-          <h1 className="text-2xl font-semibold">Profile</h1>
-          <div className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
+      <main className="min-h-screen p-3 sm:p-6">
+        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-3 pb-6 sm:space-y-4">
+          <h1 className="text-xl font-semibold sm:text-2xl">Profile</h1>
+          <div className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
             {/* Name row: full name + edit icon */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -334,13 +612,17 @@ export default function ProfilePage() {
               <p className="text-xs text-muted-foreground">Loading profile…</p>
             )}
             <div className="mt-4 space-y-2 text-sm">
-              <div>
+              <div className="min-w-0">
                 <span className="text-muted-foreground">Email</span>
-                <p className="font-medium">{user.email ?? "—"}</p>
+                <p className="truncate font-medium">{user.email ?? "—"}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">User ID</span>
                 <p className="truncate font-mono text-xs text-muted-foreground">{user.id}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Courses</span>
+                <p className="text-sm text-muted-foreground">—</p>
               </div>
             </div>
             <div className="mt-4">
@@ -354,43 +636,155 @@ export default function ProfilePage() {
               </button>
             </div>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="md:col-span-3">
-              <ContributionHeatmap userId={user.id} />
-            </div>
-            <section className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
-              <h2 className="mb-2 text-sm font-semibold">Past quizzes</h2>
-              <p className="mb-3 text-xs text-muted-foreground">
-                You&apos;ll see your recent quizzes here once tracking is connected.
-              </p>
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
-                  <span>Sample quiz – Active recall</span>
-                  <span className="text-xs">{formatDayLabel(0)}</span>
-                </li>
-                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
-                  <span>Sample quiz – Spaced repetition</span>
-                  <span className="text-xs">{formatDayLabel(-1)}</span>
-                </li>
-              </ul>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:grid-cols-3">
+            <section className="rounded-lg border border-border bg-card p-2.5 text-card-foreground shadow-sm sm:p-4">
+              <div className="flex items-start justify-between gap-1 sm:gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground sm:text-xs">Current streak</p>
+                  <p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-2xl">
+                    {statsLoading ? "…" : stats?.currentStreak ?? 0}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground sm:text-xs">days</p>
+                </div>
+                <div className="shrink-0 rounded border border-border bg-background p-1.5 text-muted-foreground sm:p-2">
+                  <Flame className="h-3 w-3 sm:h-4 sm:w-4" />
+                </div>
+              </div>
             </section>
-            <section className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
-              <h2 className="mb-2 text-sm font-semibold">Past flashcards</h2>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Flashcard sessions will appear here with quick stats.
+            <section className="rounded-lg border border-border bg-card p-2.5 text-card-foreground shadow-sm sm:p-4">
+              <div className="flex items-start justify-between gap-1 sm:gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground sm:text-xs">Longest streak</p>
+                  <p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-2xl">
+                    {statsLoading ? "…" : stats?.longestStreak ?? 0}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground sm:text-xs">days</p>
+                </div>
+                <div className="shrink-0 rounded border border-border bg-background p-1.5 text-muted-foreground sm:p-2">
+                  <Star className="h-3 w-3 sm:h-4 sm:w-4" />
+                </div>
+              </div>
+            </section>
+            <section className="rounded-lg border border-border bg-card p-2.5 text-card-foreground shadow-sm sm:p-4">
+              <div className="flex items-start justify-between gap-1 sm:gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground sm:text-xs">Total XP</p>
+                  <p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-2xl">
+                    {statsLoading ? "…" : (stats?.totalXp ?? 0).toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground sm:text-xs">xp</p>
+                </div>
+                <div className="shrink-0 rounded border border-border bg-background p-1.5 text-muted-foreground sm:p-2">
+                  <Award className="h-3 w-3 sm:h-4 sm:w-4" />
+                </div>
+              </div>
+            </section>
+            <section className="col-span-3 rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
+              <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
+                <h2 className="text-sm font-semibold">Badges</h2>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2 lg:grid-cols-10">
+                {BADGES.map((b) => {
+                  const earned = b.earned(stats);
+                  return earned ? (
+                    <button
+                      key={b.name}
+                      type="button"
+                      title={b.name}
+                      onClick={() => setBadgePopup(b)}
+                      className={[
+                        "aspect-square rounded-md border border-border shadow-sm",
+                        "flex items-center justify-center overflow-hidden",
+                        "bg-primary text-primary-foreground",
+                        "hover:opacity-90 focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring",
+                      ].join(" ")}
+                    >
+                      <BadgePlaceholderIcon className="h-[60%] w-[60%]" />
+                    </button>
+                  ) : (
+                    <div
+                      key={b.name}
+                      title="Badges will appear here"
+                      className={[
+                        "aspect-square rounded-md border border-dashed border-border shadow-sm",
+                        "flex items-center justify-center overflow-hidden bg-muted/30 text-muted-foreground",
+                      ].join(" ")}
+                    >
+                      <BadgePlaceholderIcon className="h-[50%] w-[50%] opacity-50" />
+                    </div>
+                  );
+                })}
+              </div>
+              {badgePopup && (
+                <BadgePopup
+                  badge={badgePopup}
+                  onClose={() => setBadgePopup(null)}
+                />
+              )}
+              <p className="mt-2 text-[11px] text-muted-foreground sm:mt-3 sm:text-xs">
+                Badges will be unlocked from quizzes, flashcards, streaks, and XP milestones.
               </p>
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
-                  <span>Sample deck – Biology basics</span>
-                  <span className="text-xs">12 cards</span>
-                </li>
-                <li className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-muted-foreground">
-                  <span>Sample deck – History dates</span>
-                  <span className="text-xs">20 cards</span>
-                </li>
-              </ul>
             </section>
           </div>
+          <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
+            <div className="min-w-0 pb-6 pr-2 lg:col-span-2 sm:pr-4">
+              <ContributionHeatmap userId={user.id} />
+            </div>
+            <section className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
+              <h2 className="mb-1.5 text-sm font-semibold sm:mb-2">Past quizzes</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                View all your previous quiz attempts.
+              </p>
+              <button
+                type="button"
+                onClick={() => setPastQuizzesViewAllOpen(true)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                View all
+              </button>
+            </section>
+            <section className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
+              <h2 className="mb-1.5 text-sm font-semibold sm:mb-2">Past flashcards</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                View all your flashcard decks and sessions.
+              </p>
+              <button
+                type="button"
+                onClick={() => setPastFlashcardsViewAllOpen(true)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                View all
+              </button>
+            </section>
+          </div>
+          <FullScreenModal
+            open={pastQuizzesViewAllOpen}
+            title="All past quizzes"
+            onClose={() => setPastQuizzesViewAllOpen(false)}
+          >
+            <div className="mx-auto w-full max-w-3xl space-y-4">
+              <p className="text-sm text-muted-foreground">
+                No quizzes to show. Your quiz history will appear here once you complete some quizzes.
+              </p>
+              <ul className="space-y-2 text-sm">
+                {/* Fetched quizzes will be listed here */}
+              </ul>
+            </div>
+          </FullScreenModal>
+          <FullScreenModal
+            open={pastFlashcardsViewAllOpen}
+            title="All past flashcards"
+            onClose={() => setPastFlashcardsViewAllOpen(false)}
+          >
+            <div className="mx-auto w-full max-w-3xl space-y-4">
+              <p className="text-sm text-muted-foreground">
+                No flashcards to show. Your decks and sessions will appear here once you use flashcards.
+              </p>
+              <ul className="space-y-2 text-sm">
+                {/* Fetched decks/sessions will be listed here */}
+              </ul>
+            </div>
+          </FullScreenModal>
           {message && (
             <p
               className={
@@ -414,7 +808,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="min-h-screen p-6">
+    <main className="min-h-screen p-4 sm:p-6">
       <div className="mx-auto max-w-md space-y-6">
         <h1 className="text-2xl font-semibold">Profile</h1>
         <p className="text-muted-foreground">
