@@ -355,9 +355,9 @@ class QuizSubmitResponse(BaseModel):
     results: list[QuestionResult]
 
 # XP awarded per correct answer 
-XP_CORRECT = 10
+XP_CORRECT = 25
 # if user gets all the quiz questions right, get a bonus 
-PERFECT_SCORE_BONUS = 20
+PERFECT_SCORE_BONUS = 15
 
 
 # ============================================
@@ -516,6 +516,12 @@ async def submit_quiz(
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve quiz. Please try again."
+        )
+
+    if not isinstance(request.answers, list):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Missing 'answers' value."
         )
 
      # user not answer all questions
