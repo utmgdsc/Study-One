@@ -40,3 +40,25 @@ export interface GenerateResponse {
   summary: string[];
   quiz: QuizQuestion[];
 }
+
+/** Response from POST /api/v1/quiz/result (XP and streak). */
+export interface QuizResultResponse {
+  applied: boolean;
+  xp_awarded: number;
+  user_stats: {
+    xp_total?: number;
+    current_streak_days?: number;
+    longest_streak_days?: number;
+  };
+}
+
+/** Response from POST /api/v1/flashcards/session-complete (XP and streak). */
+export interface FlashcardSessionCompleteResponse {
+  applied: boolean;
+  xp_awarded: number;
+  user_stats: {
+    xp_total?: number;
+    current_streak_days?: number;
+    longest_streak_days?: number;
+  };
+}

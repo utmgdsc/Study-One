@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyMaterials, generateStudyPack } from "@/lib/api";
+import { generateStudyPack } from "@/lib/api";
 import { GenerateResponse, QuizQuestion } from "@/types/api";
 
 const USER_FRIENDLY_FALLBACK =
@@ -82,7 +82,6 @@ export default function Home() {
           }
         ]
       });
-
     }, 3000);
   }
 
@@ -188,10 +187,10 @@ export default function Home() {
               </div>
               <div>
                 {studyPack.quiz.map((q, index) => (
-                  <QuestionDisplay 
+                  <QuestionDisplay
                     key={index}
-                    question={q} 
-                    index={index} 
+                    question={q}
+                    index={index}
                   />
                 ))}
               </div>
