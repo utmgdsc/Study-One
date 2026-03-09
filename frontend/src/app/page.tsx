@@ -2,11 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import {
-  generateStudyPack,
-  requestQuizExplanation,
-  submitQuizResult,
-} from "@/lib/api";
+import { generateStudyPack, requestQuizExplanation } from "@/lib/api";
 import { GenerateResponse, QuizQuestion } from "@/types/api";
 import { useAuth } from "@/context/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -38,16 +34,6 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<(string | null)[]>([]);
-  const [quizSubmitting, setQuizSubmitting] = useState(false);
-  const [quizSubmitError, setQuizSubmitError] = useState<string | null>(null);
-  const [quizSubmitSuccess, setQuizSubmitSuccess] = useState<string | null>(
-    null,
-  );
-  const [quizXpSummary, setQuizXpSummary] = useState<{
-    xpTotal?: number;
-    currentStreakDays?: number;
-    longestStreakDays?: number;
-  } | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user } = useAuth();
 
@@ -60,9 +46,6 @@ export default function Home() {
 
     setStudyPack(null);
     setQuizAnswers([]);
-    setQuizSubmitError(null);
-    setQuizSubmitSuccess(null);
-    setQuizXpSummary(null);
     setErrorMessage(null);
     setLoading(true);
     try {
@@ -152,48 +135,7 @@ export default function Home() {
   }
 
   async function handleSubmitQuiz() {
-    if (!studyPack || !studyPack.quiz.length) return;
-    if (!user) {
-      setQuizSubmitError("You need to be signed in to submit the quiz and earn XP.");
-      return;
-    }
-
-    const total = studyPack.quiz.length;
-    const answeredCount = quizAnswers.filter((a) => a != null).length;
-    if (answeredCount < total) {
-      setQuizSubmitError("Please answer all questions before submitting the quiz.");
-      return;
-    }
-
-    const correct = studyPack.quiz.reduce((acc, q, idx) => {
-      const answer = quizAnswers[idx];
-      return acc + (answer === q.answer ? 1 : 0);
-    }, 0);
-
-    const quizId = generateQuizId();
-
-    setQuizSubmitting(true);
-    setQuizSubmitError(null);
-    setQuizSubmitSuccess(null);
-
-    try {
-      const result = await submitQuizResult(correct, total, quizId);
-      const { xp_awarded, user_stats, applied } = result;
-      setQuizXpSummary({
-        xpTotal: user_stats?.xp_total,
-        currentStreakDays: user_stats?.current_streak_days,
-        longestStreakDays: user_stats?.longest_streak_days,
-      });
-      setQuizSubmitSuccess(
-        applied
-          ? `Quiz submitted: you scored ${correct}/${total} and earned ${xp_awarded} XP.`
-          : `Quiz submitted: you scored ${correct}/${total}, but today's quiz XP was already applied.`,
-      );
-    } catch (err) {
-      setQuizSubmitError(toUserFriendlyMessage(err));
-    } finally {
-      setQuizSubmitting(false);
-    }
+    console.log("handleSubmitQuiz called (stub). This branch does not persist quizzes.");
   }
 
   return (
@@ -306,51 +248,6 @@ export default function Home() {
                     onAnswerSelected={handleAnswerSelected}
                   />
                 ))}
-              </div>
-              <div className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={handleSubmitQuiz}
-                    disabled={
-                      quizSubmitting ||
-                      !studyPack.quiz.length ||
-                      quizAnswers.filter((a) => a != null).length !==
-                        studyPack.quiz.length
-                    }
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {quizSubmitting ? "Submitting quiz…" : "Submit quiz to profile"}
-                  </button>
-                  {user ? (
-                    <span className="text-xs text-muted-foreground">
-                      Signed in as {user.email ?? "current user"}.
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      Sign in to see XP and streak updates.
-                    </span>
-                  )}
-                </div>
-                {quizSubmitError && (
-                  <p className="text-xs text-destructive">{quizSubmitError}</p>
-                )}
-                {quizSubmitSuccess && (
-                  <p className="text-xs text-foreground">{quizSubmitSuccess}</p>
-                )}
-                {quizXpSummary && (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {typeof quizXpSummary.xpTotal === "number" && (
-                      <p>Total XP: {quizXpSummary.xpTotal}</p>
-                    )}
-                    {typeof quizXpSummary.currentStreakDays === "number" && (
-                      <p>Current streak: {quizXpSummary.currentStreakDays} day(s)</p>
-                    )}
-                    {typeof quizXpSummary.longestStreakDays === "number" && (
-                      <p>Longest streak: {quizXpSummary.longestStreakDays} day(s)</p>
-                    )}
-                  </div>
-                )}
               </div>
             </section>
           </div>
