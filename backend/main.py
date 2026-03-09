@@ -150,6 +150,27 @@ class FlashcardSessionCompleteResponse(BaseModel):
     user_stats: dict
 
 
+class QuizExplanationRequest(BaseModel):
+    """
+    Request body for POST /api/v1/quiz/explain
+    - question/options/answer: the MC question context
+    - user_answer: the option the student chose (optional)
+    - correction_explanation: any existing explanation shown to the user (optional)
+    - followup_prompt: optional follow-up question from the student
+    """
+    question: str
+    options: List[str]
+    answer: str
+    user_answer: Optional[str] = None
+    correction_explanation: Optional[str] = None
+    followup_prompt: Optional[str] = None
+
+
+class QuizExplanationResponse(BaseModel):
+    """Plain-text explanation for a quiz question."""
+    explanation: str
+
+
 # ============================================
 # STUDY PACK HELPER FUNCTIONS
 # ============================================
@@ -339,7 +360,73 @@ async def generate_study_pack(
             status_code=500,
             detail=f"Invalid AI response format: {str(e)}"
         )
-    
+
+
+@app.post("/api/v1/quiz/explain", response_model=QuizExplanationResponse)
+async def explain_quiz_answer(
+    request: QuizExplanationRequest,
+    _user: Optional[UserPayload] = Depends(user_for_generate),
+):
+    """
+    Return a short, focused explanation for why the correct answer is right
+    and/or answer a follow-up question about this specific quiz item.
+    """
+    base_context = {
+        "question": request.question,
+        "options": request.options,
+        "correct_answer": request.answer,
+        "user_answer": request.user_answer,
+        "existing_explanation": request.correction_explanation,
+    }
+
+    if request.followup_prompt:
+        prompt = f"""You are helping a student understand a multiple-choice question.
+
+Question and options (JSON):
+{json.dumps(base_context, ensure_ascii=False, indent=2)}
+
+The student has a follow-up question:
+\"\"\"{request.followup_prompt.strip()}\"\"\"
+
+Rules:
+- Use ONLY the information in the JSON above.
+- If the follow-up asks about something beyond that context, say that you don't know.
+- Focus on explaining the reasoning clearly and simply.
+- Respond in 2–4 short sentences.
+- Respond as plain text only (no lists, bullet points, or markdown)."""
+    else:
+        prompt = f"""You are helping a student understand why their multiple-choice answer was incorrect.
+
+Question and options (JSON):
+{json.dumps(base_context, ensure_ascii=False, indent=2)}
+
+Task:
+- Briefly explain why the correct answer is right and why the student's answer, if given, is wrong.
+
+Rules:
+- Use ONLY the information in the JSON above.
+- Do NOT introduce outside facts or extra background knowledge.
+- Respond in 2–4 short sentences.
+- Respond as plain text only (no lists, bullet points, or markdown)."""
+
+    raw_response = await gemini_service.call_gemini(prompt)
+
+    if raw_response is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Gemini unavailable. Please try again.",
+        )
+
+    cleaned = clean_response(raw_response)
+    explanation = cleaned.strip()
+
+    if not explanation:
+        raise HTTPException(
+            status_code=500,
+            detail="AI returned an empty explanation. Please try again.",
+        )
+
+    return QuizExplanationResponse(explanation=explanation)
 
 @app.post("/api/v1/quiz", response_model=GenerateQuizResponse)
 async def generate_quiz_questions(

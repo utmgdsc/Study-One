@@ -2,7 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyPack } from "@/lib/api";
+import {
+  generateStudyPack,
+  requestQuizExplanation,
+  submitQuizResult,
+} from "@/lib/api";
 import { GenerateResponse, QuizQuestion } from "@/types/api";
 import { useAuth } from "@/context/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -19,11 +23,31 @@ function toUserFriendlyMessage(err: unknown): string {
   return isTechnical ? USER_FRIENDLY_FALLBACK : raw;
 }
 
+function generateQuizId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return (crypto as Crypto).randomUUID();
+  }
+  return `quiz-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
 export default function Home() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
+  const [quizAnswers, setQuizAnswers] = useState<(string | null)[]>([]);
+  const [quizSubmitting, setQuizSubmitting] = useState(false);
+  const [quizSubmitError, setQuizSubmitError] = useState<string | null>(null);
+  const [quizSubmitSuccess, setQuizSubmitSuccess] = useState<string | null>(
+    null,
+  );
+  const [quizXpSummary, setQuizXpSummary] = useState<{
+    xpTotal?: number;
+    currentStreakDays?: number;
+    longestStreakDays?: number;
+  } | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user } = useAuth();
 
@@ -35,12 +59,21 @@ export default function Home() {
     if (isDisabled) return;
 
     setStudyPack(null);
+    setQuizAnswers([]);
+    setQuizSubmitError(null);
+    setQuizSubmitSuccess(null);
+    setQuizXpSummary(null);
     setErrorMessage(null);
     setLoading(true);
     try {
       const response = await generateStudyPack(notes.trim());
       console.log("Study pack response:", response);
       setStudyPack(response);
+      setQuizAnswers(
+        Array(response.quiz.length)
+          .fill(null)
+          .map(() => null),
+      );
     } catch (err) {
       console.error("Failed to generate study pack:", err);
       setErrorMessage(toUserFriendlyMessage(err));
@@ -71,7 +104,7 @@ export default function Home() {
       setLoading(false);
 
       // sample preview of study pack
-      setStudyPack({
+      const sample = {
         summary: [
           "Summary 1", 
           "Summary 2", 
@@ -93,8 +126,74 @@ export default function Home() {
               "and they are not the main place where proteins are made (that is mostly ribosomes.",
           },
         ],
-      });
+      };
+      setStudyPack(sample);
+      setQuizAnswers(
+        Array(sample.quiz.length)
+          .fill(null)
+          .map(() => null),
+      );
     }, 3000);
+  }
+
+  function handleAnswerSelected(questionIndex: number, answer: string) {
+    setQuizAnswers((prev) => {
+      const next =
+        prev.length === (studyPack?.quiz.length ?? 0)
+          ? [...prev]
+          : Array(studyPack?.quiz.length ?? 0)
+              .fill(null)
+              .map(() => null);
+      if (questionIndex >= 0 && questionIndex < next.length) {
+        next[questionIndex] = answer;
+      }
+      return next;
+    });
+  }
+
+  async function handleSubmitQuiz() {
+    if (!studyPack || !studyPack.quiz.length) return;
+    if (!user) {
+      setQuizSubmitError("You need to be signed in to submit the quiz and earn XP.");
+      return;
+    }
+
+    const total = studyPack.quiz.length;
+    const answeredCount = quizAnswers.filter((a) => a != null).length;
+    if (answeredCount < total) {
+      setQuizSubmitError("Please answer all questions before submitting the quiz.");
+      return;
+    }
+
+    const correct = studyPack.quiz.reduce((acc, q, idx) => {
+      const answer = quizAnswers[idx];
+      return acc + (answer === q.answer ? 1 : 0);
+    }, 0);
+
+    const quizId = generateQuizId();
+
+    setQuizSubmitting(true);
+    setQuizSubmitError(null);
+    setQuizSubmitSuccess(null);
+
+    try {
+      const result = await submitQuizResult(correct, total, quizId);
+      const { xp_awarded, user_stats, applied } = result;
+      setQuizXpSummary({
+        xpTotal: user_stats?.xp_total,
+        currentStreakDays: user_stats?.current_streak_days,
+        longestStreakDays: user_stats?.longest_streak_days,
+      });
+      setQuizSubmitSuccess(
+        applied
+          ? `Quiz submitted: you scored ${correct}/${total} and earned ${xp_awarded} XP.`
+          : `Quiz submitted: you scored ${correct}/${total}, but today's quiz XP was already applied.`,
+      );
+    } catch (err) {
+      setQuizSubmitError(toUserFriendlyMessage(err));
+    } finally {
+      setQuizSubmitting(false);
+    }
   }
 
   return (
@@ -204,8 +303,54 @@ export default function Home() {
                     question={q}
                     index={index}
                     userId={user?.id ?? null}
+                    onAnswerSelected={handleAnswerSelected}
                   />
                 ))}
+              </div>
+              <div className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSubmitQuiz}
+                    disabled={
+                      quizSubmitting ||
+                      !studyPack.quiz.length ||
+                      quizAnswers.filter((a) => a != null).length !==
+                        studyPack.quiz.length
+                    }
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {quizSubmitting ? "Submitting quiz…" : "Submit quiz to profile"}
+                  </button>
+                  {user ? (
+                    <span className="text-xs text-muted-foreground">
+                      Signed in as {user.email ?? "current user"}.
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      Sign in to see XP and streak updates.
+                    </span>
+                  )}
+                </div>
+                {quizSubmitError && (
+                  <p className="text-xs text-destructive">{quizSubmitError}</p>
+                )}
+                {quizSubmitSuccess && (
+                  <p className="text-xs text-foreground">{quizSubmitSuccess}</p>
+                )}
+                {quizXpSummary && (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {typeof quizXpSummary.xpTotal === "number" && (
+                      <p>Total XP: {quizXpSummary.xpTotal}</p>
+                    )}
+                    {typeof quizXpSummary.currentStreakDays === "number" && (
+                      <p>Current streak: {quizXpSummary.currentStreakDays} day(s)</p>
+                    )}
+                    {typeof quizXpSummary.longestStreakDays === "number" && (
+                      <p>Longest streak: {quizXpSummary.longestStreakDays} day(s)</p>
+                    )}
+                  </div>
+                )}
               </div>
             </section>
           </div>
@@ -221,10 +366,12 @@ function QuestionDisplay({
   question,
   index,
   userId,
+  onAnswerSelected,
 }: {
   question: QuizQuestion;
   index: number;
   userId: string | null;
+  onAnswerSelected?: (index: number, answer: string) => void;
 }) {
   // answer selected
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -236,6 +383,13 @@ function QuestionDisplay({
   const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [hasReported, setHasReported] = useState(false);
   const [lastReportAt, setLastReportAt] = useState<number | null>(null);
+  const [whyWrongOpen, setWhyWrongOpen] = useState(false);
+  const [whyWrongLoading, setWhyWrongLoading] = useState(false);
+  const [whyWrongError, setWhyWrongError] = useState<string | null>(null);
+  const [whyWrongExplanation, setWhyWrongExplanation] = useState<string | null>(
+    null,
+  );
+  const [followupInput, setFollowupInput] = useState("");
 
   async function handleReportSubmit(e: FormEvent) {
     e.preventDefault();
@@ -285,6 +439,31 @@ function QuestionDisplay({
     }
   }
 
+  async function fetchWhyWrongExplanation(followupPrompt?: string) {
+    if (!selectedAnswer || selectedAnswer === question.answer) {
+      return;
+    }
+
+    setWhyWrongLoading(true);
+    setWhyWrongError(null);
+
+    try {
+      const response = await requestQuizExplanation({
+        question: question.question,
+        options: question.options,
+        answer: question.answer,
+        userAnswer: selectedAnswer,
+        correctionExplanation: question.correctionExplanation ?? null,
+        followupPrompt: followupPrompt,
+      });
+      setWhyWrongExplanation(response.explanation);
+    } catch (err) {
+      setWhyWrongError(toUserFriendlyMessage(err));
+    } finally {
+      setWhyWrongLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold md:text-base">
@@ -297,6 +476,7 @@ function QuestionDisplay({
             onClick={() => {
               setSelectedAnswer(option);
               setShowAnswer(true);
+              onAnswerSelected?.(index, option);
             }}
             disabled={showAnswer}
             className={`w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
@@ -359,21 +539,90 @@ function QuestionDisplay({
         </div>
       )}
       <div className="mt-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => {
-            if (!userId) {
-              setReportMessage("You need to be signed in to report an issue.");
-              return;
-            }
-            setReportOpen((open) => !open);
-          }}
-          disabled={hasReported}
-          className="text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-default disabled:opacity-60"
-        >
-          {hasReported ? "Reported" : "Report an issue"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {showAnswer &&
+            selectedAnswer &&
+            selectedAnswer !== question.answer && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const nextOpen = !whyWrongOpen;
+                  setWhyWrongOpen(nextOpen);
+                  if (nextOpen && !whyWrongExplanation && !whyWrongLoading) {
+                    await fetchWhyWrongExplanation();
+                  }
+                }}
+                className="text-xs text-muted-foreground underline hover:text-foreground"
+              >
+                Why was I wrong?
+              </button>
+            )}
+          <button
+            type="button"
+            onClick={() => {
+              if (!userId) {
+                setReportMessage("You need to be signed in to report an issue.");
+                return;
+              }
+              setReportOpen((open) => !open);
+            }}
+            disabled={hasReported}
+            className="text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-default disabled:opacity-60"
+          >
+            {hasReported ? "Reported" : "Report an issue"}
+          </button>
+        </div>
       </div>
+      {whyWrongOpen && showAnswer && selectedAnswer && selectedAnswer !== question.answer && (
+        <div className="mt-2 space-y-2 rounded-md border border-border bg-card/60 p-3 text-xs">
+          <p className="font-medium text-foreground">Why your answer was incorrect</p>
+          {whyWrongLoading && (
+            <p className="text-muted-foreground">Getting an explanation…</p>
+          )}
+          {whyWrongError && (
+            <p className="text-destructive">{whyWrongError}</p>
+          )}
+          {!whyWrongLoading && !whyWrongError && whyWrongExplanation && (
+            <p className="text-muted-foreground">{whyWrongExplanation}</p>
+          )}
+          <div className="mt-2 space-y-1">
+            <label className="block font-medium text-foreground">
+              Ask a follow-up about this question
+              <textarea
+                value={followupInput}
+                onChange={(e) => setFollowupInput(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="e.g., I thought my answer was also true because…"
+              />
+            </label>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setFollowupInput("");
+                  setWhyWrongOpen(false);
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={whyWrongLoading || !followupInput.trim()}
+                onClick={async () => {
+                  const prompt = followupInput.trim();
+                  if (!prompt) return;
+                  await fetchWhyWrongExplanation(prompt);
+                }}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {whyWrongLoading ? "Asking…" : "Ask follow-up"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {reportOpen && userId && (
         <form
           onSubmit={handleReportSubmit}

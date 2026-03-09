@@ -55,6 +55,11 @@ export interface GenerateResponse {
   quiz: QuizQuestion[];
 }
 
+/** Response from POST /api/v1/quiz/explain. */
+export interface QuizExplanationResponse {
+  explanation: string;
+}
+
 /** Response from POST /api/v1/quiz/result (XP and streak). */
 export interface QuizResultResponse {
   applied: boolean;

@@ -10,6 +10,7 @@ import type {
   GenerateRequest,
   GenerateResponse,
   QuizResultResponse,
+  QuizExplanationResponse,
 } from "../types/api";
 import { getAccessToken } from "./auth";
 
@@ -128,6 +129,42 @@ export async function submitQuizResult(
   if (quizId) body.quiz_id = quizId;
 
   const response = await fetch(`${API_BASE_URL}/api/v1/quiz/result`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Requests an AI explanation for a specific quiz question, optionally with a follow-up prompt.
+ */
+export async function requestQuizExplanation(params: {
+  question: string;
+  options: string[];
+  answer: string;
+  userAnswer?: string | null;
+  correctionExplanation?: string | null;
+  followupPrompt?: string | null;
+}): Promise<QuizExplanationResponse> {
+  const body = {
+    question: params.question,
+    options: params.options,
+    answer: params.answer,
+    user_answer: params.userAnswer ?? null,
+    correction_explanation: params.correctionExplanation ?? null,
+    followup_prompt: params.followupPrompt?.trim() || null,
+  };
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz/explain`, {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify(body),
