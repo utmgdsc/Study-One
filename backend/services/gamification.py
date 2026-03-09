@@ -11,6 +11,26 @@ XP_FLASHCARD_SESSION = 10
 XP_QUIZ_COMPLETION = 25
 XP_PERFECT_QUIZ_BONUS = 15
 
+# Level-from-XP formula: L2 at 100 XP, then +120, +140, +160, +180, ... (L3=220, L4=360, L5=520)
+# MUST match public.xp_to_level() in 20250302000002_level_from_xp.sql
+
+
+def xp_to_level(xp_total: int) -> int:
+    """Return level (>= 1) for a given total XP. L2=100, L3=220, L4=360, L5=520, ..."""
+    import math
+    if xp_total <= 0:
+        return 1
+    # Inverse of xp_for_level(L) = (L-1)*(80 + 10*L)
+    level = int((-70 + math.sqrt(8100 + 40.0 * xp_total)) / 20)
+    return max(1, level)
+
+
+def xp_for_level(level: int) -> int:
+    """Minimum total XP required to reach this level. L1=0, L2=100, L3=220, L4=360, L5=520, ..."""
+    if level <= 1:
+        return 0
+    return (level - 1) * (80 + 10 * level)  # 100, 220, 360, 520, 700, ...
+
 
 def _utc_day(dt: datetime) -> date:
     if dt.tzinfo is None:
