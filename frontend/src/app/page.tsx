@@ -2,8 +2,19 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyPack } from "@/lib/api";
-import { GenerateResponse, QuizQuestion } from "@/types/api";
+import {
+  generateStudyPack,
+  generateFlashcards,
+  submitFlashcardReview,
+  submitFlashcardSessionComplete,
+} from "@/lib/api";
+import {
+  type AnkiRating,
+  type Flashcard,
+  type FlashcardResponse,
+  type GenerateResponse,
+  type QuizQuestion,
+} from "@/types/api";
 import { useAuth } from "@/context/auth-context";
 import { supabase } from "@/lib/supabase";
 
@@ -24,6 +35,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
+  const [flashcardSet, setFlashcardSet] = useState<FlashcardResponse | null>(null);
+  const [flashcardError, setFlashcardError] = useState<string | null>(null);
+  const [saveFlashcardsToProfile, setSaveFlashcardsToProfile] = useState(false);
+  const [flashcardsSaved, setFlashcardsSaved] = useState(false);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user } = useAuth();
 
@@ -35,16 +50,39 @@ export default function Home() {
     if (isDisabled) return;
 
     setStudyPack(null);
+    setFlashcardSet(null);
     setErrorMessage(null);
+    setFlashcardError(null);
+    setFlashcardsSaved(false);
     setLoading(true);
     try {
-      const response = await generateStudyPack(notes.trim());
-      console.log("Study pack response:", response);
-      setStudyPack(response);
+      const includeAuthForFlashcards = saveFlashcardsToProfile && !!user;
+      const [packResult, flashcardsResult] = await Promise.allSettled([
+        generateStudyPack(notes.trim()),
+        generateFlashcards(notes.trim(), undefined, { includeAuth: includeAuthForFlashcards }),
+      ] as const);
+
+      if (packResult.status === "fulfilled") {
+        setStudyPack(packResult.value);
+      } else {
+        console.error("Failed to generate study pack:", packResult.reason);
+        setStudyPack(null);
+        setErrorMessage(toUserFriendlyMessage(packResult.reason));
+      }
+
+      if (flashcardsResult.status === "fulfilled") {
+        setFlashcardSet(flashcardsResult.value);
+        setFlashcardsSaved(includeAuthForFlashcards);
+      } else {
+        console.error("Failed to generate flashcards:", flashcardsResult.reason);
+        setFlashcardSet(null);
+        setFlashcardError(toUserFriendlyMessage(flashcardsResult.reason));
+      }
     } catch (err) {
       console.error("Failed to generate study pack:", err);
       setErrorMessage(toUserFriendlyMessage(err));
       setStudyPack(null);
+      setFlashcardSet(null);
     } finally {
       setLoading(false);
     }
@@ -65,6 +103,11 @@ export default function Home() {
       clearTimeout(previewTimerRef.current);
       previewTimerRef.current = null;
     }
+    setStudyPack(null);
+    setFlashcardSet(null);
+    setErrorMessage(null);
+    setFlashcardError(null);
+    setFlashcardsSaved(false);
     setLoading(true);
     previewTimerRef.current = setTimeout(() => {
       previewTimerRef.current = null;
@@ -72,11 +115,7 @@ export default function Home() {
 
       // sample preview of study pack
       setStudyPack({
-        summary: [
-          "Summary 1", 
-          "Summary 2", 
-          "Summary 3"
-        ], 
+        summary: ["Summary 1", "Summary 2", "Summary 3"],
         quiz: [
           {
             question: "Which option best describes the mitochondria?",
@@ -94,6 +133,34 @@ export default function Home() {
           },
         ],
       });
+
+      // sample preview of flashcards
+      setFlashcardSet({
+        flashcard_set_id: "preview-set",
+        flashcards: [
+          {
+            question: "What is the main role of mitochondria?",
+            answer: "They generate ATP, the usable energy for the cell.",
+          },
+          {
+            question: "Where is most of the cell's genetic material stored?",
+            answer: "In the nucleus.",
+          },
+          {
+            question: "Which cell structure controls what enters and leaves the cell?",
+            answer: "The cell membrane (plasma membrane).",
+          },
+          {
+            question: "Which organelles are primarily responsible for protein synthesis?",
+            answer: "Ribosomes.",
+          },
+          {
+            question: "Why are mitochondria called the 'powerhouses' of the cell?",
+            answer: "Because they convert nutrients into ATP through cellular respiration.",
+          },
+        ],
+      });
+      setFlashcardsSaved(false);
     }, 3000);
   }
 
@@ -175,10 +242,10 @@ export default function Home() {
           </div>
         </form>
         
-        {/* UI for testing end-to-end connection */}
+        {/* Study pack and flashcards */}
         {studyPack && !loading && (
           <div className="mt-8 space-y-6">
-            <h1 className="mb-4 text-lg font-bold">Study Pack Display for Connectivity Test Purpose</h1>
+            <h1 className="mb-4 text-lg font-bold">Study pack</h1>
             {/* Summary Section */}
             <section className="rounded-lg border border-border bg-card p-6">
               <h2 className="mb-4 text-lg font-semibold">Summary</h2>
@@ -208,10 +275,207 @@ export default function Home() {
                 ))}
               </div>
             </section>
+
+            {/* Flashcards Section */}
+            {flashcardSet && (
+              <section className="rounded-lg border border-border bg-card p-6">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold">Flashcards</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Flip each card to reveal the answer, then rate how well you knew it.
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={saveFlashcardsToProfile}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        if (next && !user) {
+                          setFlashcardError("Sign in to save flashcards to your profile.");
+                          setSaveFlashcardsToProfile(false);
+                          return;
+                        }
+                        setFlashcardError(null);
+                        setSaveFlashcardsToProfile(next);
+                      }}
+                      disabled={!user}
+                      className="h-3 w-3 rounded border-input"
+                    />
+                    Save to profile for later review
+                  </label>
+                </div>
+                <FlashcardGridPreview
+                  flashcardSet={flashcardSet}
+                  sourceLength={notes.length}
+                  userId={user?.id ?? null}
+                  savingEnabled={saveFlashcardsToProfile && !!user && flashcardsSaved}
+                />
+                {flashcardError && (
+                  <p className="mt-3 text-xs text-destructive">{flashcardError}</p>
+                )}
+                {!flashcardsSaved && saveFlashcardsToProfile && !!user && flashcardSet.flashcard_set_id !== "preview-set" && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Save is enabled, but this set was generated without being saved. Generate again to save it to your profile.
+                  </p>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>
     </main>
+  );
+}
+
+type FlashcardGridPreviewProps = {
+  flashcardSet: FlashcardResponse;
+  sourceLength: number;
+  userId: string | null;
+  savingEnabled: boolean;
+};
+
+function FlashcardGridPreview({
+  flashcardSet,
+  sourceLength,
+  userId,
+  savingEnabled,
+}: FlashcardGridPreviewProps) {
+  const maxCards =
+    sourceLength < 800 ? 5 : sourceLength < 2000 ? 8 : Math.min(10, flashcardSet.flashcards.length);
+  const cardsToShow = flashcardSet.flashcards.slice(0, maxCards);
+
+  if (!cardsToShow.length) return null;
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      {cardsToShow.map((card, index) => (
+        <FlashcardPreviewCard
+          key={index}
+          card={card}
+          index={index}
+          flashcardSetId={flashcardSet.flashcard_set_id}
+          userId={userId}
+          isPreview={flashcardSet.flashcard_set_id === "preview-set"}
+          savingEnabled={savingEnabled}
+        />
+      ))}
+    </div>
+  );
+}
+
+type FlashcardPreviewCardProps = {
+  card: Flashcard;
+  index: number;
+  flashcardSetId: string;
+  userId: string | null;
+  isPreview?: boolean;
+  savingEnabled: boolean;
+};
+
+function FlashcardPreviewCard({
+  card,
+  index,
+  flashcardSetId,
+  userId,
+  isPreview,
+  savingEnabled,
+}: FlashcardPreviewCardProps) {
+  const [flipped, setFlipped] = useState(false);
+  const [selectedRating, setSelectedRating] = useState<AnkiRating | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleRate(rating: AnkiRating) {
+    if (submitting || selectedRating || isPreview) return;
+
+    if (!userId || !savingEnabled) {
+      setSelectedRating(rating);
+      setError(
+        !userId
+          ? "Sign in from the top-right to save your flashcard progress."
+          : "Enable “Save to profile” and regenerate to track progress and update your heatmap.",
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await submitFlashcardReview(flashcardSetId, index, rating);
+      setSelectedRating(rating);
+      // Award XP + heatmap update (idempotent per day per set).
+      await submitFlashcardSessionComplete(flashcardSetId);
+    } catch (err) {
+      console.error("Failed to submit flashcard review:", err);
+      setError(toUserFriendlyMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const faceClass =
+    "absolute inset-0 flex h-full w-full flex-col justify-between rounded-lg border border-border bg-background p-4 text-left shadow-sm backface-hidden";
+
+  return (
+    <div className="group relative h-48 cursor-pointer perspective-[1000px]">
+      <div
+        className={`relative h-full w-full transition-transform duration-500 transform-3d ${
+          flipped ? "transform-[rotateY(180deg)]" : ""
+        }`}
+        onClick={() => setFlipped((f) => !f)}
+        aria-label={`Flashcard ${index + 1}`}
+      >
+        {/* Front: question */}
+        <div className={`${faceClass}`}>
+          <p className="text-xs text-muted-foreground">Question {index + 1}</p>
+          <p className="mt-2 line-clamp-5 text-sm font-medium">{card.question}</p>
+          <p className="mt-3 text-xs text-muted-foreground">Tap to reveal answer</p>
+        </div>
+
+        {/* Back: answer */}
+        <div className={`${faceClass} transform-[rotateY(180deg)] backface-hidden`}>
+          <p className="text-xs text-muted-foreground">Answer</p>
+          <p className="mt-2 line-clamp-5 text-sm">{card.answer}</p>
+          <div className="mt-3 space-y-1.5">
+            <p className="text-[11px] text-muted-foreground">How well did you know this?</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(["again", "hard", "good", "easy"] as AnkiRating[]).map((rating) => {
+                const label =
+                  rating === "again"
+                    ? "Again"
+                    : rating === "hard"
+                    ? "Hard"
+                    : rating === "good"
+                    ? "Good"
+                    : "Easy";
+                const isSelected = selectedRating === rating;
+                return (
+                  <button
+                    key={rating}
+                    type="button"
+                    disabled={!!selectedRating || submitting}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleRate(rating);
+                    }}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    } disabled:opacity-60`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {error && <p className="text-[11px] text-destructive">{error}</p>}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

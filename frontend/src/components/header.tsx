@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 export function Header() {
   const pathname = usePathname();
   const isProfile = pathname === "/profile";
+  const isFlashcards = pathname === "/flashcards" || pathname.startsWith("/flashcards/");
   const [helpOpen, setHelpOpen] = useState(false);
 
   const helpTitle = isProfile ? "How to use your profile" : "How to use Socrato";
@@ -17,10 +18,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4 sm:px-6">
-        <Link
-          href="/"
-          className="text-lg font-semibold text-foreground hover:opacity-90"
-        >
+        <Link href="/" className="text-lg font-semibold text-foreground hover:opacity-90">
           Socrato
         </Link>
         <div className="relative flex items-center gap-1">
@@ -32,6 +30,13 @@ export function Header() {
           >
             <span className="text-lg font-medium leading-none">?</span>
           </button>
+          <Link
+            href="/flashcards"
+            className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-current={isFlashcards ? "page" : undefined}
+          >
+            Review
+          </Link>
           <Link
             href="/profile"
             className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

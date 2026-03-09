@@ -6,6 +6,9 @@
  */
 
 import type {
+  AnkiRating,
+  FlashcardHistoryResponse,
+  FlashcardResponse,
   FlashcardSessionCompleteResponse,
   GenerateRequest,
   GenerateResponse,
@@ -83,6 +86,93 @@ export async function generateStudyPack(
     const errorMessage = error.detail?.[0]?.msg || error.detail || `Request failed with status ${response.status}`;
     throw new Error(errorMessage);
   }
+  return response.json();
+}
+
+/**
+ * Generates a flashcard set from user notes or topic.
+ * Stores the set in Supabase and returns the cards plus set id.
+ */
+export async function generateFlashcards(
+  text: string,
+  topic?: string,
+  options?: { includeAuth?: boolean },
+): Promise<FlashcardResponse> {
+  const body: { text?: string; topic?: string } = {};
+  if (text.trim()) body.text = text.trim();
+  if (topic && topic.trim()) body.topic = topic.trim();
+
+  const includeAuth = options?.includeAuth ?? true;
+  const headers = includeAuth
+    ? await authHeaders()
+    : { "Content-Type": "application/json" };
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/flashcards`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Submit an Anki-style rating for a single flashcard.
+ */
+export async function submitFlashcardReview(
+  flashcardSetId: string,
+  cardIndex: number,
+  rating: AnkiRating,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/review`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({
+      flashcard_set_id: flashcardSetId,
+      card_index: cardIndex,
+      rating,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`,
+    );
+  }
+}
+
+/**
+ * Fetch the latest rating per card for a flashcard set, ordered from hardest
+ * (again → hard → good → easy). Used to prioritize difficult cards.
+ */
+export async function fetchFlashcardHistory(
+  flashcardSetId: string,
+): Promise<FlashcardHistoryResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/flashcards/${encodeURIComponent(
+      flashcardSetId,
+    )}/history`,
+    {
+      method: "GET",
+      headers: await authHeaders(),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`,
+    );
+  }
+
   return response.json();
 }
 

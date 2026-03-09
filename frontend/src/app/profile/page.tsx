@@ -748,13 +748,12 @@ export default function ProfilePage() {
               <p className="mb-3 text-xs text-muted-foreground">
                 View all your flashcard decks and sessions.
               </p>
-              <button
-                type="button"
-                onClick={() => setPastFlashcardsViewAllOpen(true)}
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+              <Link
+                href="/flashcards"
+                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
               >
                 View all
-              </button>
+              </Link>
             </section>
           </div>
           <FullScreenModal
@@ -778,10 +777,17 @@ export default function ProfilePage() {
           >
             <div className="mx-auto w-full max-w-3xl space-y-4">
               <p className="text-sm text-muted-foreground">
-                No flashcards to show. Your decks and sessions will appear here once you use flashcards.
+                For a full gallery of your saved flashcard sets, head to the dedicated review page.
               </p>
               <ul className="space-y-2 text-sm">
-                {/* Fetched decks/sessions will be listed here */}
+                <li>
+                  <Link
+                    href="/flashcards"
+                    className="text-sm text-muted-foreground underline hover:text-foreground"
+                  >
+                    Open flashcard review page
+                  </Link>
+                </li>
               </ul>
             </div>
           </FullScreenModal>

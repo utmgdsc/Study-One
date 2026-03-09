@@ -1,6 +1,6 @@
 /**
  * API Types for Socrato Frontend
- * 
+ *
  * These types mirror the shared contract in /shared/types.ts
  * and the backend Pydantic models.
  */
@@ -16,7 +16,7 @@
 export interface GenerateRequest {
   text: string;
 }
- 
+
 
 // ============================================
 // RESPONSE SCHEMA
@@ -53,6 +53,44 @@ export interface QuizQuestion {
 export interface GenerateResponse {
   summary: string[];
   quiz: QuizQuestion[];
+}
+
+// ============================================
+// FLASHCARDS
+// ============================================
+
+/** A single Q/A flashcard. Mirrors backend `Flashcard` model. */
+export interface Flashcard {
+  question: string;
+  answer: string;
+}
+
+/** Response from POST /api/v1/flashcards. */
+export interface FlashcardResponse {
+  flashcard_set_id: string;
+  flashcards: Flashcard[];
+}
+
+/** Anki-style rating values for a flashcard review. */
+export type AnkiRating = "again" | "hard" | "good" | "easy";
+
+/** Response from POST /api/v1/flashcards/review. */
+export interface FlashcardReviewResponse {
+  xp_awarded: number;
+  total_xp: number;
+  already_reviewed: boolean;
+}
+
+/** History item from GET /api/v1/flashcards/{flashcard_set_id}/history. */
+export interface FlashcardHistoryItem {
+  card_index: number;
+  rating: AnkiRating;
+  reviewed_at: string;
+}
+
+/** History payload from GET /api/v1/flashcards/{flashcard_set_id}/history. */
+export interface FlashcardHistoryResponse {
+  history: FlashcardHistoryItem[];
 }
 
 /** Response from POST /api/v1/quiz/result (XP and streak). */

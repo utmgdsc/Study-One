@@ -7,6 +7,9 @@ Provides two dependencies:
 """
 
 from __future__ import annotations
+import json
+from jwt import PyJWK
+import sys
 
 import logging
 
@@ -33,20 +36,31 @@ def _expected_issuer() -> str | None:
 
 
 def _decode_token(token: str) -> dict:
-    """Verify and decode a Supabase-issued JWT."""
-    secret = settings.SUPABASE_JWT_SECRET
-    if not secret:
+    # Allow test override
+    test_key = getattr(sys.modules[__name__], '_TEST_PUBLIC_KEY', None)
+    
+    if test_key:
+        return pyjwt.decode(
+            token,
+            test_key,
+            algorithms=["ES256"],
+            audience="authenticated",
+            options={"verify_iss": False}
+        )
+    public_key_str = settings.SUPABASE_JWT_PUBLIC_KEY
+    if not public_key_str:
         raise HTTPException(
             status_code=503,
-            detail="Auth is not configured (SUPABASE_JWT_SECRET missing).",
+            detail="Auth is not configured (SUPABASE_JWT_PUBLIC_KEY missing).",
         )
 
     issuer = _expected_issuer()
     try:
+        jwk = PyJWK(json.loads(public_key_str))
         return jwt.decode(
             token,
-            secret,
-            algorithms=["HS256"],
+            jwk.key,
+            algorithms=["ES256"],
             audience="authenticated",
             issuer=issuer,
         )
