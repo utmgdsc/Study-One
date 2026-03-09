@@ -29,6 +29,20 @@ export interface QuizQuestion {
   question: string;
   options: string[];
   answer: string;
+  /**
+   * Optional single explanation covering why the correct answer is right
+   * and why the other options are wrong.
+   */
+  correctionExplanation?: string;
+  /**
+   * Optional explanation for why the correct answer is right.
+   */
+  correctExplanation?: string;
+  /**
+   * Optional map of option → explanation for why that option is incorrect.
+   * The correct answer can also be included here if the backend prefers a single map.
+   */
+  optionExplanations?: Record<string, string>;
 }
 
 /**
