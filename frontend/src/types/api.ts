@@ -29,6 +29,20 @@ export interface QuizQuestion {
   question: string;
   options: string[];
   answer: string;
+  /**
+   * Optional single explanation covering why the correct answer is right
+   * and why the other options are wrong.
+   */
+  correctionExplanation?: string;
+  /**
+   * Optional explanation for why the correct answer is right.
+   */
+  correctExplanation?: string;
+  /**
+   * Optional map of option → explanation for why that option is incorrect.
+   * The correct answer can also be included here if the backend prefers a single map.
+   */
+  optionExplanations?: Record<string, string>;
 }
 
 /**
@@ -39,4 +53,26 @@ export interface QuizQuestion {
 export interface GenerateResponse {
   summary: string[];
   quiz: QuizQuestion[];
+}
+
+/** Response from POST /api/v1/quiz/result (XP and streak). */
+export interface QuizResultResponse {
+  applied: boolean;
+  xp_awarded: number;
+  user_stats: {
+    xp_total?: number;
+    current_streak_days?: number;
+    longest_streak_days?: number;
+  };
+}
+
+/** Response from POST /api/v1/flashcards/session-complete (XP and streak). */
+export interface FlashcardSessionCompleteResponse {
+  applied: boolean;
+  xp_awarded: number;
+  user_stats: {
+    xp_total?: number;
+    current_streak_days?: number;
+    longest_streak_days?: number;
+  };
 }

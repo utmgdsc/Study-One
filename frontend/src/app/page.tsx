@@ -2,8 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyMaterials, generateStudyPack } from "@/lib/api";
+import { generateStudyPack } from "@/lib/api";
 import { GenerateResponse, QuizQuestion } from "@/types/api";
+import { useAuth } from "@/context/auth-context";
+import { supabase } from "@/lib/supabase";
 
 const USER_FRIENDLY_FALLBACK =
   "Something went wrong. Please try again.";
@@ -23,6 +25,7 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { user } = useAuth();
 
   const isEmpty = !notes.trim();
   const isDisabled = isEmpty || loading;
@@ -76,13 +79,21 @@ export default function Home() {
         ], 
         quiz: [
           {
-            question: "Question?", 
-            options: ["A", "B", "C", "D"], 
-            answer: "A"
-          }
-        ]
+            question: "Which option best describes the mitochondria?",
+            options: [
+              "They make energy for the cell",
+              "They store genetic information",
+              "They control what enters and leaves the cell",
+              "They make proteins for the cell",
+            ],
+            answer: "They make energy for the cell",
+            correctionExplanation:
+              "Mitochondria are like tiny batteries for the cell: they turn food into usable energy. " +
+              "They do not store DNA (that is mostly the nucleus), they are not the outer membrane that controls entry and exit, " +
+              "and they are not the main place where proteins are made (that is mostly ribosomes.",
+          },
+        ],
       });
-
     }, 3000);
   }
 
@@ -183,15 +194,16 @@ export default function Home() {
 
             {/* Quiz Section */}
             <section className="rounded-lg border border-border bg-card p-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Quiz</h2>
               </div>
-              <div>
+              <div className="space-y-6">
                 {studyPack.quiz.map((q, index) => (
-                  <QuestionDisplay 
+                  <QuestionDisplay
                     key={index}
-                    question={q} 
-                    index={index} 
+                    question={q}
+                    index={index}
+                    userId={user?.id ?? null}
                   />
                 ))}
               </div>
@@ -205,15 +217,77 @@ export default function Home() {
 
 
 // quiz question display for testing end-to-end connectivity
-function QuestionDisplay({ question, index }: { question: QuizQuestion; index: number }) {
+function QuestionDisplay({
+  question,
+  index,
+  userId,
+}: {
+  question: QuizQuestion;
+  index: number;
+  userId: string | null;
+}) {
   // answer selected
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   // show answer
   const [showAnswer, setShowAnswer] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportText, setReportText] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [hasReported, setHasReported] = useState(false);
+  const [lastReportAt, setLastReportAt] = useState<number | null>(null);
+
+  async function handleReportSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!userId) {
+      setReportMessage("You need to be signed in to report an issue.");
+      return;
+    }
+    if (hasReported) {
+      setReportMessage("You already reported this question. Thank you!");
+      return;
+    }
+    const now = Date.now();
+    if (lastReportAt && now - lastReportAt < 30_000) {
+      setReportMessage("Please wait a bit before sending another report.");
+      return;
+    }
+
+    const description = reportText.trim();
+    if (!description) {
+      setReportMessage("Please add a short description of the issue.");
+      return;
+    }
+
+    setReportSubmitting(true);
+    setReportMessage(null);
+    try {
+      const { error } = await supabase.from("quiz_issue_reports").insert({
+        user_id: userId,
+        question: question.question,
+        answer: question.answer,
+        options: question.options,
+        description,
+      });
+      if (error) {
+        setReportMessage("Failed to send report. Please try again later.");
+        return;
+      }
+      setHasReported(true);
+      setLastReportAt(now);
+      setReportMessage("Report sent. Thank you for your feedback!");
+      setReportOpen(false);
+      setReportText("");
+    } catch {
+      setReportMessage("Failed to send report. Please try again later.");
+    } finally {
+      setReportSubmitting(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
-      <h3 className="font-medium">
+      <h3 className="text-sm font-semibold md:text-base">
         {index + 1}. {question.question}
       </h3>
       <div className="space-y-2">
@@ -245,7 +319,100 @@ function QuestionDisplay({ question, index }: { question: QuizQuestion; index: n
           </button>
         ))}
       </div>
-
+      {showAnswer && (
+        <div className="mt-3 space-y-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          {question.correctionExplanation ? (
+            <div>
+              <p className="font-medium text-foreground">Explanation</p>
+              <p className="mt-1 text-muted-foreground">
+                {question.correctionExplanation}
+              </p>
+            </div>
+          ) : (
+            <>
+              {question.correctExplanation && (
+                <div>
+                  <p className="font-medium text-foreground">Why this answer is correct</p>
+                  <p className="mt-1 text-muted-foreground">{question.correctExplanation}</p>
+                </div>
+              )}
+              {question.optionExplanations && (
+                <div>
+                  <p className="font-medium text-foreground">
+                    Why the other options are incorrect
+                  </p>
+                  <ul className="mt-1 space-y-1 text-muted-foreground">
+                    {question.options
+                      .filter((opt) => opt !== question.answer)
+                      .map((opt) => (
+                        <li key={opt}>
+                          <span className="font-medium">{opt}:</span>{" "}
+                          {question.optionExplanations?.[opt] ??
+                            "Explanation not provided yet."}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      <div className="mt-3 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => {
+            if (!userId) {
+              setReportMessage("You need to be signed in to report an issue.");
+              return;
+            }
+            setReportOpen((open) => !open);
+          }}
+          disabled={hasReported}
+          className="text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-default disabled:opacity-60"
+        >
+          {hasReported ? "Reported" : "Report an issue"}
+        </button>
+      </div>
+      {reportOpen && userId && (
+        <form
+          onSubmit={handleReportSubmit}
+          className="mt-2 space-y-2 rounded-md border border-border bg-card/60 p-3 text-xs"
+        >
+          <label className="block font-medium text-foreground">
+            Describe the issue
+            <textarea
+              value={reportText}
+              onChange={(e) => setReportText(e.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder="e.g., The correct answer should be B, not A."
+            />
+          </label>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setReportOpen(false);
+                setReportText("");
+              }}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={reportSubmitting}
+              className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            >
+              {reportSubmitting ? "Sending…" : "Send report"}
+            </button>
+          </div>
+        </form>
+      )}
+      {reportMessage && (
+        <p className="mt-2 text-xs text-muted-foreground">{reportMessage}</p>
+      )}
     </div>
   );
 }
