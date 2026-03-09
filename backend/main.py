@@ -425,8 +425,6 @@ def grade_quiz(answers: list[QuestionAnswer], questions: list[MCQuiz]) -> list[Q
 
     for i, q in enumerate(questions):
         ans = user_answers.get(i, "")
-        if ans == "":
-            return []
         is_correct = ans == q.answer
 
         result = QuestionResult(
@@ -448,6 +446,34 @@ def calc_xp(correct: int, total: int) -> int:
         xp += PERFECT_SCORE_BONUS
     return xp
 
+def validate_submit_quiz_request(request: QuizSubmitRequest) -> None:
+    try: 
+        if not request.quiz_id:
+            raise ValueError("Missing 'quiz_id' field.")
+        # Allow an empty list to flow through to the length check later;
+        # we only treat a completely absent answers field as invalid here.
+        if request.answers is None:  # type: ignore[comparison-overlap]
+            raise ValueError("Missing 'answers' field.")
+        if not isinstance(request.quiz_id, str):
+            raise ValueError(f"Invalid 'quiz_id' field.")  
+        if not isinstance(request.answers, list):
+            raise ValueError(f"Invalid 'answers' field.")
+
+        for a in request.answers:
+            if not isinstance(a, QuestionAnswer): 
+                raise ValueError(f"Invalid 'answers' field.")
+            if not isinstance(a.question_index, int):
+                raise ValueError(f"Invalid 'question_index' field.")
+            if not isinstance(a.selected_answer, str):
+                raise ValueError(f"Invalid 'selected_answer' field.")
+            if a.selected_answer.strip() == "":
+                raise ValueError(f"Invalid 'selected_answer' field.")
+    except (KeyError, TypeError, ValueError) as e:
+        logger.warning("[quiz submit] Invalid Request: %s", e)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid request format: {str(e)}"
+        )
 
 @app.post("/api/v1/quiz", response_model=GenerateQuizResponse)
 async def generate_quiz_questions(
@@ -494,6 +520,10 @@ async def submit_quiz(
     user: UserPayload | None = Depends(user_for_generate),
 ):
     """Attempt MC Quiz. Grade the user's attempt at the quiz and store the results. """
+    
+    # check if the request is valid
+    validate_submit_quiz_request(request)
+    
     sb = get_supabase()
     user_id = user["user_id"]
 
@@ -509,6 +539,7 @@ async def submit_quiz(
             raise HTTPException(status_code=404, detail=f"Quiz {request.quiz_id} not found.")
 
         questions = [MCQuiz(**q) for q in quiz_data.data["questions"]]
+
     except HTTPException:
         raise
     except Exception as e:
@@ -516,12 +547,6 @@ async def submit_quiz(
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve quiz. Please try again."
-        )
-
-    if not isinstance(request.answers, list):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Missing 'answers' value."
         )
 
      # user not answer all questions
@@ -541,6 +566,11 @@ async def submit_quiz(
 
    # check user's answers are in question options
     for ans in request.answers:
+        if ans.question_index < 0 or ans.question_index >= len(questions):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid 'question_index' {ans.question_index}. Must be between 0 and {len(questions)-1}."
+            )
         if ans.selected_answer not in questions[ans.question_index].options:
             raise HTTPException(
                 status_code=422,

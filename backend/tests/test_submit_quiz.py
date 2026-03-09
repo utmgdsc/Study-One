@@ -188,12 +188,6 @@ class TestGradeQuiz:
             answers.append(a)
         return answers
     
-    def test_missing_answer_index(self):
-        """grade_quiz returns [] when any question has no matching submitted answer."""
-        qs = self._questions(3)
-        ans = self._answers([(0, qs[0].answer), (2, qs[2].answer)])  # index 1 missing
-        assert grade_quiz(ans, qs) == []
-
     def test_correct_result_fields(self):
         """grade_quiz returns results with all required fields."""
         qs = self._questions(1)
@@ -404,6 +398,36 @@ class TesQuizAttempt:
         assert payload["metadata"]["total_correct"] == len(ALL_CORRECT_ANSWERS)
         assert payload["metadata"]["total_questions"] == len(QUIZ_QUESTIONS_DB)
         assert payload["metadata"]["score"] == 100.0
+    
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_attempt_insert_fail(self, client, auth_headers, mock_supabase):
+        mock_supabase._attempt_chain.insert.return_value.execute.side_effect = Exception("insert failed")
+        
+        response = client.post(
+            "/api/v1/quiz/submit", 
+            json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
+            headers=auth_headers
+        )
+        assert response.status_code == 500
+        assert "Failed to store quiz attempt" in response.json()["detail"]
+        # When attempt insertion fails, there should be no user_activity or XP RPC calls
+        mock_supabase._activity_chain.insert.assert_not_called()
+        mock_supabase.rpc.assert_not_called()
+
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_user_activity_stored_when_xp_zero(self, client, auth_headers, mock_supabase):
+        """Activity should still be recorded even when no XP is awarded."""
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": ALL_WRONG_ANSWERS},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        mock_supabase._activity_chain.insert.assert_called_once()
+        payload = mock_supabase._activity_chain.insert.call_args[0][0]
+        assert payload["xp_awarded"] == 0
+        assert payload["metadata"]["score"] == 0.0
 
 class TestAwardXP:
     """Test suite to check XP awarded properly"""
@@ -479,7 +503,7 @@ class TestInputValidation:
     """Test suite for the /quiz/submit input"""
 
     @pytest.mark.usefixtures("mock_supabase")
-    def test_less_answers(self, client, auth_headers):
+    def test_less_answers(self, client, auth_headers, mock_supabase):
         response = client.post(
             "/api/v1/quiz/submit", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS[1:]},
@@ -487,9 +511,11 @@ class TestInputValidation:
         )
         assert response.status_code == 422
         assert "Please answer all questions before submitting" in response.json()["detail"]
+        mock_supabase._attempt_chain.insert.assert_not_called()
+        mock_supabase._activity_chain.insert.assert_not_called()
 
     @pytest.mark.usefixtures("mock_supabase")
-    def test_more_answers(self, client, auth_headers):
+    def test_more_answers(self, client, auth_headers, mock_supabase):
         answers = ALL_CORRECT_ANSWERS + [{"question_index": 5, "selected_answer": "Hi"}]
         response = client.post(
             "/api/v1/quiz/submit", 
@@ -498,9 +524,11 @@ class TestInputValidation:
         )
         assert response.status_code == 422
         assert "Please answer all questions before submitting" in response.json()["detail"]
+        mock_supabase._attempt_chain.insert.assert_not_called()
+        mock_supabase._activity_chain.insert.assert_not_called()
 
     @pytest.mark.usefixtures("mock_supabase")
-    def test_duplicate_answers(self, client, auth_headers):
+    def test_duplicate_answers(self, client, auth_headers, mock_supabase):
         answers = ALL_CORRECT_ANSWERS[1:] + [ALL_WRONG_ANSWERS[1]]
         response = client.post(
             "/api/v1/quiz/submit", 
@@ -509,9 +537,11 @@ class TestInputValidation:
         )
         assert response.status_code == 422
         assert "no duplicates" in response.json()["detail"]
+        mock_supabase._attempt_chain.insert.assert_not_called()
+        mock_supabase._activity_chain.insert.assert_not_called()
 
     @pytest.mark.usefixtures("mock_supabase")
-    def test_answer_not_in_option(self, client, auth_headers):
+    def test_answer_not_in_option(self, client, auth_headers, mock_supabase):
         answers =  [{"question_index": 0, "selected_answer": "NOT VALID"}] + ALL_CORRECT_ANSWERS[1:] 
         response = client.post(
             "/api/v1/quiz/submit", 
@@ -520,5 +550,111 @@ class TestInputValidation:
         )
         assert response.status_code == 422
         assert "not a valid option" in response.json()["detail"]
+        mock_supabase._attempt_chain.insert.assert_not_called()
+        mock_supabase._activity_chain.insert.assert_not_called()
+
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_missing_quiz_id_field(self, client, auth_headers):
+        """Omitting 'quiz_id' should fail validation."""
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"answers": ALL_CORRECT_ANSWERS},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_missing_answers_field(self, client, auth_headers):
+        """Omitting 'answers' should fail validation."""
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+    
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_wrong_type_answers_field(self, client, auth_headers):
+        """Omitting 'answers' should fail validation."""
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": "answer"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+    
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_empty_answers_list(self, client, auth_headers):
+        """Empty answers list should be rejected as incomplete."""
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": []},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+        assert "Please answer all questions before submitting" in response.json()["detail"]
+
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_empty_selected_answer_rejected(self, client, auth_headers):
+        """Blank selected_answer triggers pydantic validation error."""
+        bad_answers = [{"question_index": 0, "selected_answer": "   "}] + ALL_CORRECT_ANSWERS[1:]
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": bad_answers},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+    
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_selected_answer_not_string(self, client, auth_headers):
+        bad_answers = [{"question_index": 0, "selected_answer": 123}] + ALL_CORRECT_ANSWERS[1:]
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": bad_answers},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_quiz_index_out_of_range(self, client, auth_headers):
+        bad_answers = [{"question_index": 10, "selected_answer": "hi"}] + ALL_CORRECT_ANSWERS[1:]
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": bad_answers},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
 
 
+class TestQuizLookupFailures:
+    """Edge cases around loading the quiz from Supabase."""
+
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_quiz_not_found(self, client, auth_headers, mock_supabase):
+        # Simulate Supabase returning no row for this quiz_id
+        mock_supabase._quiz_chain.execute.return_value = None
+
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+        assert str(QUIZ_SET_ID) in response.json()["detail"]
+        mock_supabase._attempt_chain.insert.assert_not_called()
+        mock_supabase._activity_chain.insert.assert_not_called()
+
+    @pytest.mark.usefixtures("mock_supabase")
+    def test_quiz_db_failure(self, client, auth_headers, mock_supabase):
+        # Simulate low-level Supabase error during quiz fetch
+        mock_supabase._quiz_chain.execute.side_effect = Exception("db down")
+
+        response = client.post(
+            "/api/v1/quiz/submit",
+            json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
+            headers=auth_headers,
+        )
+        assert response.status_code == 500
+        assert "Failed to retrieve quiz" in response.json()["detail"]
+        mock_supabase._attempt_chain.insert.assert_not_called()
+        mock_supabase._activity_chain.insert.assert_not_called()
