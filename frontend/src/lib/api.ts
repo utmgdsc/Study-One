@@ -9,10 +9,8 @@ import type {
   FlashcardSessionCompleteResponse,
   GenerateRequest,
   GenerateResponse,
-  GenerateQuizResponse,
   QuizResultResponse,
-  QuizSubmitRequest,
-  QuizSubmitResponse,
+  QuizExplanationResponse,
 } from "../types/api";
 import { getAccessToken } from "./auth";
 
@@ -90,66 +88,6 @@ export async function generateStudyPack(
 }
 
 /**
- * Generates a quiz from user notes (same notes used for summary).
- * Stores quiz in backend; returns quiz_set_id and questions.
- */
-export async function generateQuiz(text: string): Promise<GenerateQuizResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/quiz`, {
-    method: "POST",
-    headers: await authHeaders(),
-    body: JSON.stringify({ text: text.trim() }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Request failed with status ${response.status}`,
-    );
-  }
-
-  return response.json();
-}
-
-function isNetworkError(err: unknown): err is TypeError {
-  return (
-    err instanceof TypeError &&
-    (err.message === "Failed to fetch" || err.message === "Load failed")
-  );
-}
-
-/**
- * Submits quiz answers and returns score, results, and XP.
- */
-export async function submitQuiz(
-  request: QuizSubmitRequest
-): Promise<QuizSubmitResponse> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}/api/v1/quiz/submit`, {
-      method: "POST",
-      headers: await authHeaders(),
-      body: JSON.stringify(request),
-    });
-  } catch (err) {
-    if (isNetworkError(err)) {
-      throw new Error(
-        `Cannot reach the server at ${API_BASE_URL}. Make sure the backend is running (e.g. \`uv run uvicorn backend.main:app\`).`
-      );
-    }
-    throw err;
-  }
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Request failed with status ${response.status}`,
-    );
-  }
-
-  return response.json();
-}
-
-/**
  * Records flashcard session completion for XP. Awards 10 XP. Idempotent per day
  * (one session per day counts). Call when the user finishes a flashcard session.
  */
@@ -191,6 +129,42 @@ export async function submitQuizResult(
   if (quizId) body.quiz_id = quizId;
 
   const response = await fetch(`${API_BASE_URL}/api/v1/quiz/result`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Requests an AI explanation for a specific quiz question, optionally with a follow-up prompt.
+ */
+export async function requestQuizExplanation(params: {
+  question: string;
+  options: string[];
+  answer: string;
+  userAnswer?: string | null;
+  correctionExplanation?: string | null;
+  followupPrompt?: string | null;
+}): Promise<QuizExplanationResponse> {
+  const body = {
+    question: params.question,
+    options: params.options,
+    answer: params.answer,
+    user_answer: params.userAnswer ?? null,
+    correction_explanation: params.correctionExplanation ?? null,
+    followup_prompt: params.followupPrompt?.trim() || null,
+  };
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz/explain`, {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify(body),

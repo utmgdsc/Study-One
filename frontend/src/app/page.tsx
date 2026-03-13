@@ -2,14 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyPack, generateQuiz, submitQuiz } from "@/lib/api";
-import {
-  GenerateResponse,
-  GenerateQuizResponse,
-  MCQuizQuestion,
-  QuizSubmitResponse,
-} from "@/types/api";
+import { generateStudyPack, requestQuizExplanation } from "@/lib/api";
+import { GenerateResponse, QuizQuestion } from "@/types/api";
 import { useAuth } from "@/context/auth-context";
+import { supabase } from "@/lib/supabase";
 
 const USER_FRIENDLY_FALLBACK =
   "Something went wrong. Please try again.";
@@ -23,19 +19,23 @@ function toUserFriendlyMessage(err: unknown): string {
   return isTechnical ? USER_FRIENDLY_FALLBACK : raw;
 }
 
+function generateQuizId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return (crypto as Crypto).randomUUID();
+  }
+  return `quiz-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
 export default function Home() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
-  const [quizData, setQuizData] = useState<GenerateQuizResponse | null>(null);
-  const [quizLoading, setQuizLoading] = useState(false);
-  const [quizError, setQuizError] = useState<string | null>(null);
-  const [quizSubmitResult, setQuizSubmitResult] = useState<QuizSubmitResponse | null>(null);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
-  const [submittingQuiz, setSubmittingQuiz] = useState(false);
-  const [quizSectionCollapsed, setQuizSectionCollapsed] = useState(false);
+  const [quizAnswers, setQuizAnswers] = useState<(string | null)[]>([]);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { user } = useAuth();
 
   const isEmpty = !notes.trim();
   const isDisabled = isEmpty || loading;
@@ -45,70 +45,24 @@ export default function Home() {
     if (isDisabled) return;
 
     setStudyPack(null);
-    setQuizData(null);
-    setQuizSubmitResult(null);
-    setSelectedAnswers({});
+    setQuizAnswers([]);
     setErrorMessage(null);
-    setQuizError(null);
     setLoading(true);
     try {
       const response = await generateStudyPack(notes.trim());
+      console.log("Study pack response:", response);
       setStudyPack(response);
+      setQuizAnswers(
+        Array(response.quiz.length)
+          .fill(null)
+          .map(() => null),
+      );
     } catch (err) {
       console.error("Failed to generate study pack:", err);
       setErrorMessage(toUserFriendlyMessage(err));
       setStudyPack(null);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleGenerateQuiz() {
-    if (!notes.trim()) return;
-    setQuizError(null);
-    setQuizData(null);
-    setQuizSubmitResult(null);
-    setSelectedAnswers({});
-    setQuizLoading(true);
-    try {
-      const response = await generateQuiz(notes.trim());
-      setQuizData(response);
-      setQuizSectionCollapsed(false);
-    } catch (err) {
-      console.error("Failed to generate quiz:", err);
-      setQuizError(toUserFriendlyMessage(err));
-      setQuizData(null);
-    } finally {
-      setQuizLoading(false);
-    }
-  }
-
-  function handleHideQuiz() {
-    setQuizSectionCollapsed(true);
-  }
-
-  function handleShowQuiz() {
-    setQuizSectionCollapsed(false);
-  }
-
-  async function handleSubmitQuiz() {
-    if (!quizData) return;
-    const answers = Object.entries(selectedAnswers)
-      .map(([idx, answer]) => ({ question_index: Number(idx), selected_answer: answer }));
-    if (answers.length !== quizData.quiz.length) return;
-    setSubmittingQuiz(true);
-    setQuizError(null);
-    try {
-      const result = await submitQuiz({
-        quiz_id: quizData.quiz_set_id,
-        answers,
-      });
-      setQuizSubmitResult(result);
-    } catch (err) {
-      console.error("Failed to submit quiz:", err);
-      setQuizError(toUserFriendlyMessage(err));
-    } finally {
-      setSubmittingQuiz(false);
     }
   }
 
@@ -132,16 +86,56 @@ export default function Home() {
       previewTimerRef.current = null;
       setLoading(false);
 
-      // sample preview of study pack (summary only; quiz is generated separately)
-      setStudyPack({
+      // sample preview of study pack
+      const sample = {
         summary: [
-          "Summary 1",
-          "Summary 2",
-          "Summary 3",
+          "Summary 1", 
+          "Summary 2", 
+          "Summary 3"
+        ], 
+        quiz: [
+          {
+            question: "Which option best describes the mitochondria?",
+            options: [
+              "They make energy for the cell",
+              "They store genetic information",
+              "They control what enters and leaves the cell",
+              "They make proteins for the cell",
+            ],
+            answer: "They make energy for the cell",
+            correctionExplanation:
+              "Mitochondria are like tiny batteries for the cell: they turn food into usable energy. " +
+              "They do not store DNA (that is mostly the nucleus), they are not the outer membrane that controls entry and exit, " +
+              "and they are not the main place where proteins are made (that is mostly ribosomes.",
+          },
         ],
-        quiz: [],
-      });
+      };
+      setStudyPack(sample);
+      setQuizAnswers(
+        Array(sample.quiz.length)
+          .fill(null)
+          .map(() => null),
+      );
     }, 3000);
+  }
+
+  function handleAnswerSelected(questionIndex: number, answer: string) {
+    setQuizAnswers((prev) => {
+      const next =
+        prev.length === (studyPack?.quiz.length ?? 0)
+          ? [...prev]
+          : Array(studyPack?.quiz.length ?? 0)
+              .fill(null)
+              .map(() => null);
+      if (questionIndex >= 0 && questionIndex < next.length) {
+        next[questionIndex] = answer;
+      }
+      return next;
+    });
+  }
+
+  async function handleSubmitQuiz() {
+    console.log("handleSubmitQuiz called (stub). This branch does not persist quizzes.");
   }
 
   return (
@@ -149,7 +143,7 @@ export default function Home() {
       <div className="mx-auto max-w-2xl">
         <h1 className="mb-2 text-2xl font-semibold">Socrato</h1>
         <p className="mb-6 text-muted-foreground">
-          Paste your study notes below to generate a summary. You can then choose to generate a quiz from the same notes.
+          Paste your study notes below to generate a summary and quiz.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -222,9 +216,11 @@ export default function Home() {
           </div>
         </form>
         
-        {/* Summary; small Generate quiz button under it; quiz section only after user generates */}
+        {/* UI for testing end-to-end connection */}
         {studyPack && !loading && (
           <div className="mt-8 space-y-6">
+            <h1 className="mb-4 text-lg font-bold">Study Pack Display for Connectivity Test Purpose</h1>
+            {/* Summary Section */}
             <section className="rounded-lg border border-border bg-card p-6">
               <h2 className="mb-4 text-lg font-semibold">Summary</h2>
               <ul className="space-y-2">
@@ -235,104 +231,25 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
-              {/* Generate quiz button under summary, smaller */}
-              <div className="mt-4 pt-4 border-t border-border/50">
-                <button
-                  type="button"
-                  onClick={handleGenerateQuiz}
-                  disabled={quizLoading || !notes.trim()}
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {quizLoading ? "Generating…" : "Generate quiz from notes"}
-                </button>
-              </div>
             </section>
 
-            {/* Quiz section: only visible after user clicks Generate quiz; Hide quiz collapses to a tab */}
-            {(quizData || quizLoading) && (
-              <section className="rounded-lg border border-border bg-card overflow-hidden">
-                {quizSectionCollapsed && quizData ? (
-                  <div className="flex items-center justify-between gap-2 p-3 bg-muted/30">
-                    <span className="text-sm text-muted-foreground">
-                      Quiz ({quizData.quiz.length} question{quizData.quiz.length !== 1 ? "s" : ""})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleShowQuiz}
-                      className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      Show quiz
-                    </button>
-                  </div>
-                ) : (
-                  <div className="p-6">
-                    <div className="mb-4 flex items-start justify-between gap-4">
-                      <h2 className="text-lg font-semibold">
-                        Quiz
-                      </h2>
-                      <div className="flex shrink-0 flex-row gap-2">
-                        <button
-                          type="button"
-                          onClick={handleHideQuiz}
-                          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          Hide quiz
-                        </button>
-                        {quizData && (
-                          <button
-                            type="button"
-                            onClick={handleGenerateQuiz}
-                            disabled={quizLoading || !notes.trim()}
-                            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                          >
-                            {quizLoading ? "Regenerating…" : "Regenerate quiz"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {quizLoading && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
-                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-hidden="true" />
-                        <span>Generating quiz from your notes…</span>
-                      </div>
-                    )}
-
-                    {quizError && (
-                      <div
-                        className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                        role="alert"
-                      >
-                        {quizError}
-                        <button
-                          type="button"
-                          onClick={() => setQuizError(null)}
-                          className="ml-2 font-medium underline hover:no-underline"
-                        >
-                          Dismiss
-                        </button>
-                      </div>
-                    )}
-
-                    {quizData && !quizSubmitResult && (
-                      <QuizTake
-                        quiz={quizData.quiz}
-                        selectedAnswers={selectedAnswers}
-                        onSelectAnswer={(index, answer) =>
-                          setSelectedAnswers((prev) => ({ ...prev, [index]: answer }))
-                        }
-                        onSubmit={handleSubmitQuiz}
-                        submitting={submittingQuiz}
-                      />
-                    )}
-
-                    {quizData && quizSubmitResult && (
-                      <QuizResults quiz={quizData.quiz} result={quizSubmitResult} />
-                    )}
-                  </div>
-                )}
-              </section>
-            )}
+            {/* Quiz Section */}
+            <section className="rounded-lg border border-border bg-card p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Quiz</h2>
+              </div>
+              <div className="space-y-6">
+                {studyPack.quiz.map((q, index) => (
+                  <QuestionDisplay
+                    key={index}
+                    question={q}
+                    index={index}
+                    userId={user?.id ?? null}
+                    onAnswerSelected={handleAnswerSelected}
+                  />
+                ))}
+              </div>
+            </section>
           </div>
         )}
       </div>
@@ -340,159 +257,308 @@ export default function Home() {
   );
 }
 
-function QuizTake({
-  quiz,
-  selectedAnswers,
-  onSelectAnswer,
-  onSubmit,
-  submitting,
+
+// quiz question display for testing end-to-end connectivity
+function QuestionDisplay({
+  question,
+  index,
+  userId,
+  onAnswerSelected,
 }: {
-  quiz: MCQuizQuestion[];
-  selectedAnswers: Record<number, string>;
-  onSelectAnswer: (index: number, answer: string) => void;
-  onSubmit: () => void;
-  submitting: boolean;
+  question: QuizQuestion;
+  index: number;
+  userId: string | null;
+  onAnswerSelected?: (index: number, answer: string) => void;
 }) {
-  const allAnswered = quiz.length > 0 && quiz.every((_, i) => selectedAnswers[i] != null);
-  return (
-    <div className="space-y-6">
-      {quiz.map((q, index) => (
-        <div key={index} className="space-y-2">
-          <h3 className="text-sm font-semibold md:text-base">
-            {index + 1}. {q.question}
-          </h3>
-          {q.topic && (
-            <p className="text-xs text-muted-foreground">Topic: {q.topic}</p>
-          )}
-          <div className="space-y-2">
-            {q.options.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => onSelectAnswer(index, option)}
-                className={`w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                  selectedAnswers[index] === option
-                    ? "border-primary border-2 bg-primary/25 text-foreground font-medium"
-                    : "border-border bg-background hover:border-primary/50 hover:bg-muted/50"
-                }`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={!allAnswered || submitting}
-        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-      >
-        {submitting ? "Submitting…" : "Submit quiz"}
-      </button>
-    </div>
+  // answer selected
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  // show answer
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportText, setReportText] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [hasReported, setHasReported] = useState(false);
+  const [lastReportAt, setLastReportAt] = useState<number | null>(null);
+  const [whyWrongOpen, setWhyWrongOpen] = useState(false);
+  const [whyWrongLoading, setWhyWrongLoading] = useState(false);
+  const [whyWrongError, setWhyWrongError] = useState<string | null>(null);
+  const [whyWrongExplanation, setWhyWrongExplanation] = useState<string | null>(
+    null,
   );
-}
+  const [followupInput, setFollowupInput] = useState("");
 
-function QuizResults({
-  quiz,
-  result,
-}: {
-  quiz: MCQuizQuestion[];
-  result: QuizSubmitResponse;
-}) {
-  const [expandedExplanations, setExpandedExplanations] = useState<Set<number>>(new Set());
+  async function handleReportSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!userId) {
+      setReportMessage("You need to be signed in to report an issue.");
+      return;
+    }
+    if (hasReported) {
+      setReportMessage("You already reported this question. Thank you!");
+      return;
+    }
+    const now = Date.now();
+    if (lastReportAt && now - lastReportAt < 30_000) {
+      setReportMessage("Please wait a bit before sending another report.");
+      return;
+    }
 
-  function toggleExplanation(index: number) {
-    setExpandedExplanations((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
+    const description = reportText.trim();
+    if (!description) {
+      setReportMessage("Please add a short description of the issue.");
+      return;
+    }
+
+    setReportSubmitting(true);
+    setReportMessage(null);
+    try {
+      const { error } = await supabase.from("quiz_issue_reports").insert({
+        user_id: userId,
+        question: question.question,
+        answer: question.answer,
+        options: question.options,
+        description,
+      });
+      if (error) {
+        setReportMessage("Failed to send report. Please try again later.");
+        return;
+      }
+      setHasReported(true);
+      setLastReportAt(now);
+      setReportMessage("Report sent. Thank you for your feedback!");
+      setReportOpen(false);
+      setReportText("");
+    } catch {
+      setReportMessage("Failed to send report. Please try again later.");
+    } finally {
+      setReportSubmitting(false);
+    }
+  }
+
+  async function fetchWhyWrongExplanation(followupPrompt?: string) {
+    if (!selectedAnswer || selectedAnswer === question.answer) {
+      return;
+    }
+
+    setWhyWrongLoading(true);
+    setWhyWrongError(null);
+
+    try {
+      const response = await requestQuizExplanation({
+        question: question.question,
+        options: question.options,
+        answer: question.answer,
+        userAnswer: selectedAnswer,
+        correctionExplanation: question.correctionExplanation ?? null,
+        followupPrompt: followupPrompt,
+      });
+      setWhyWrongExplanation(response.explanation);
+    } catch (err) {
+      setWhyWrongError(toUserFriendlyMessage(err));
+    } finally {
+      setWhyWrongLoading(false);
+    }
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-muted/30 p-4">
-        <p className="text-lg font-semibold">
-          Score: {result.total_correct} / {result.total_questions} ({result.score}%)
-        </p>
-        {result.xp_awarded > 0 && (
-          <p className="mt-1 text-sm text-muted-foreground">+{result.xp_awarded} XP awarded</p>
-        )}
-      </div>
-      {result.results.map((r, i) => {
-        const question = quiz[r.question_index];
-        const options = question?.options ?? [];
-        const showExplanation = expandedExplanations.has(i);
-        const explanationText =
-          r.correction_explanation ??
-          (r as { correctionExplanation?: string }).correctionExplanation ??
-          "";
-        const hasExplanation = explanationText.length > 0;
-        return (
-          <div key={i} className="space-y-2">
-            <h3 className="text-sm font-semibold md:text-base">
-              {r.question_index + 1}. {r.question}
-            </h3>
-            {r.topic && (
-              <p className="text-xs text-muted-foreground">Topic: {r.topic}</p>
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold md:text-base">
+        {index + 1}. {question.question}
+      </h3>
+      <div className="space-y-2">
+        {question.options.map((option, optIndex) => (
+          <button
+            key={optIndex}
+            onClick={() => {
+              setSelectedAnswer(option);
+              setShowAnswer(true);
+              onAnswerSelected?.(index, option);
+            }}
+            disabled={showAnswer}
+            className={`w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+              showAnswer
+                ? option === question.answer
+                  ? "border-green-500 bg-green-50 dark:bg-green-950"
+                  : option === selectedAnswer
+                  ? "border-red-500 bg-red-50 dark:bg-red-950"
+                  : "border-border bg-background opacity-50"
+                : "border-border bg-background hover:border-primary hover:bg-accent"
+            } ${showAnswer ? "cursor-default" : "cursor-pointer"}`}
+          >
+            {option}
+            {showAnswer && option === question.answer && (
+              <span className="ml-2 text-green-600 dark:text-green-400">Correct</span>
             )}
-            <div className="space-y-2">
-              {options.map((option) => {
-                const isSelected = r.selected_answer === option;
-                const isCorrectOption = r.correct_answer === option;
-                let style =
-                  "w-full rounded-md border px-3 py-2 text-left text-sm ";
-                if (isCorrectOption) {
-                  style += "border-green-600 bg-green-50 dark:bg-green-950/40 text-green-900 dark:text-green-100";
-                } else if (isSelected && !r.is_correct) {
-                  style += "border-red-500 bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-100";
-                } else {
-                  style += "border-border bg-muted/30 text-muted-foreground";
-                }
-                return (
-                  <div key={option} className={style}>
-                    {option}
-                    {isSelected && r.is_correct && (
-                      <span className="ml-2 text-xs font-medium text-green-700 dark:text-green-300">
-                        ✓ Your answer
-                      </span>
-                    )}
-                    {isSelected && !r.is_correct && (
-                      <span className="ml-2 text-xs font-medium text-red-700 dark:text-red-300">
-                        ✗ Your answer
-                      </span>
-                    )}
-                    {isCorrectOption && !isSelected && !r.is_correct && (
-                      <span className="ml-2 text-xs font-medium text-green-700 dark:text-green-300">
-                        Correct answer
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            {showAnswer && option === selectedAnswer && option !== question.answer && (
+              <span className="ml-2 text-red-600 dark:text-red-400">Incorrect</span>
+            )}
+          </button>
+        ))}
+      </div>
+      {showAnswer && (
+        <div className="mt-3 space-y-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          {question.correctionExplanation ? (
+            <div>
+              <p className="font-medium text-foreground">Explanation</p>
+              <p className="mt-1 text-muted-foreground">
+                {question.correctionExplanation}
+              </p>
             </div>
-            <div className="mt-2">
+          ) : (
+            <>
+              {question.correctExplanation && (
+                <div>
+                  <p className="font-medium text-foreground">Why this answer is correct</p>
+                  <p className="mt-1 text-muted-foreground">{question.correctExplanation}</p>
+                </div>
+              )}
+              {question.optionExplanations && (
+                <div>
+                  <p className="font-medium text-foreground">
+                    Why the other options are incorrect
+                  </p>
+                  <ul className="mt-1 space-y-1 text-muted-foreground">
+                    {question.options
+                      .filter((opt) => opt !== question.answer)
+                      .map((opt) => (
+                        <li key={opt}>
+                          <span className="font-medium">{opt}:</span>{" "}
+                          {question.optionExplanations?.[opt] ??
+                            "Explanation not provided yet."}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      <div className="mt-3 flex items-center justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          {showAnswer &&
+            selectedAnswer &&
+            selectedAnswer !== question.answer && (
               <button
                 type="button"
-                onClick={() => toggleExplanation(i)}
-                className="text-xs font-medium text-primary underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                onClick={async () => {
+                  const nextOpen = !whyWrongOpen;
+                  setWhyWrongOpen(nextOpen);
+                  if (nextOpen && !whyWrongExplanation && !whyWrongLoading) {
+                    await fetchWhyWrongExplanation();
+                  }
+                }}
+                className="text-xs text-muted-foreground underline hover:text-foreground"
               >
-                {showExplanation ? "Hide explanation" : "Show explanation"}
+                Why was I wrong?
               </button>
-              {showExplanation && (
-                <p className="mt-2 text-sm text-muted-foreground border-l-2 border-border pl-3">
-                  {hasExplanation
-                    ? explanationText
-                    : "No explanation available for this question."}
-                </p>
-              )}
+            )}
+          <button
+            type="button"
+            onClick={() => {
+              if (!userId) {
+                setReportMessage("You need to be signed in to report an issue.");
+                return;
+              }
+              setReportOpen((open) => !open);
+            }}
+            disabled={hasReported}
+            className="text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-default disabled:opacity-60"
+          >
+            {hasReported ? "Reported" : "Report an issue"}
+          </button>
+        </div>
+      </div>
+      {whyWrongOpen && showAnswer && selectedAnswer && selectedAnswer !== question.answer && (
+        <div className="mt-2 space-y-2 rounded-md border border-border bg-card/60 p-3 text-xs">
+          <p className="font-medium text-foreground">Why your answer was incorrect</p>
+          {whyWrongLoading && (
+            <p className="text-muted-foreground">Getting an explanation…</p>
+          )}
+          {whyWrongError && (
+            <p className="text-destructive">{whyWrongError}</p>
+          )}
+          {!whyWrongLoading && !whyWrongError && whyWrongExplanation && (
+            <p className="text-muted-foreground">{whyWrongExplanation}</p>
+          )}
+          <div className="mt-2 space-y-1">
+            <label className="block font-medium text-foreground">
+              Ask a follow-up about this question
+              <textarea
+                value={followupInput}
+                onChange={(e) => setFollowupInput(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="e.g., I thought my answer was also true because…"
+              />
+            </label>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setFollowupInput("");
+                  setWhyWrongOpen(false);
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={whyWrongLoading || !followupInput.trim()}
+                onClick={async () => {
+                  const prompt = followupInput.trim();
+                  if (!prompt) return;
+                  await fetchWhyWrongExplanation(prompt);
+                }}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {whyWrongLoading ? "Asking…" : "Ask follow-up"}
+              </button>
             </div>
           </div>
-        );
-      })}
+        </div>
+      )}
+      {reportOpen && userId && (
+        <form
+          onSubmit={handleReportSubmit}
+          className="mt-2 space-y-2 rounded-md border border-border bg-card/60 p-3 text-xs"
+        >
+          <label className="block font-medium text-foreground">
+            Describe the issue
+            <textarea
+              value={reportText}
+              onChange={(e) => setReportText(e.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder="e.g., The correct answer should be B, not A."
+            />
+          </label>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setReportOpen(false);
+                setReportText("");
+              }}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={reportSubmitting}
+              className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            >
+              {reportSubmitting ? "Sending…" : "Send report"}
+            </button>
+          </div>
+        </form>
+      )}
+      {reportMessage && (
+        <p className="mt-2 text-xs text-muted-foreground">{reportMessage}</p>
+      )}
     </div>
   );
 }

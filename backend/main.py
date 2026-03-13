@@ -26,10 +26,7 @@ gemini_service = GeminiService()
 # Enable CORS for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js dev server
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=["http://localhost:3000"],  # Next.js dev server
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -83,6 +80,7 @@ class QuizQuestion(BaseModel):
     question: str
     options: List[str]
     answer: str
+    topic: str
     # Simple one-paragraph explanation of why the correct answer is right
     # and why the other options are wrong.
     correctionExplanation: Optional[str] = None
@@ -336,19 +334,13 @@ async def generate_study_pack(
 # QUIZ SCHEMA
 # ============================================
 
-class MCQuiz(QuizQuestion):
-    """
-    A single quiz question with multiple choice options with a linked topic
-    """
-    topic: str  
-
 class GenerateQuizResponse(BaseModel):
     """
     Response from POST /api/v1/quiz
     - quiz: Array of quiz questions with options, answers, and a linked topic
     """
     quiz_set_id: str
-    quiz: list[MCQuiz]
+    quiz: list[QuizQuestion]
 
 class QuestionAnswer(BaseModel):
     question_index: int
@@ -392,7 +384,7 @@ PERFECT_SCORE_BONUS = 15
 # QUIZ HELPER
 # ============================================
 
-def parse_and_validate_quiz(raw_response: str) -> list[MCQuiz]:
+def parse_and_validate_quiz(raw_response: str) -> list[QuizQuestion]:
     """Parse Gemini JSON and validate structure for quiz.""" 
     cleaned = clean_response(raw_response)
     try:
@@ -422,7 +414,7 @@ def parse_and_validate_quiz(raw_response: str) -> list[MCQuiz]:
                 raise ValueError(f"Quiz item {i} 'answer' not in 'options'")
             
 
-            quiz_questions.append(MCQuiz(
+            quiz_questions.append(QuizQuestion(
                 question=q["question"],
                 options=q["options"],
                 answer=q["answer"],
@@ -446,7 +438,7 @@ def parse_and_validate_quiz(raw_response: str) -> list[MCQuiz]:
             detail=f"Invalid AI response format: {str(e)}"
         )
 
-def grade_quiz(answers: list[QuestionAnswer], questions: list[MCQuiz]) -> list[QuestionResult]:
+def grade_quiz(answers: list[QuestionAnswer], questions: list[QuizQuestion]) -> list[QuestionResult]:
     # get all the answers from the user
     user_answers = {a.question_index: a.selected_answer for a in answers}
 
@@ -568,7 +560,7 @@ async def submit_quiz(
         if not quiz_data:
             raise HTTPException(status_code=404, detail=f"Quiz {request.quiz_id} not found.")
 
-        questions = [MCQuiz(**q) for q in quiz_data.data["questions"]]
+        questions = [QuizQuestion(**q) for q in quiz_data.data["questions"]]
 
     except HTTPException:
         raise

@@ -9,7 +9,7 @@ import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from main import app, calc_xp, PERFECT_SCORE_BONUS, XP_CORRECT, MCQuiz, QuestionAnswer, grade_quiz
+from main import app, calc_xp, PERFECT_SCORE_BONUS, XP_CORRECT, QuizQuestion, QuestionAnswer, grade_quiz
 
 from services.gemini import GeminiService
 from fastapi.testclient import TestClient
@@ -31,12 +31,14 @@ def auth_headers():
 
 @pytest.fixture(autouse=True)
 def mock_auth():
-    from main import app, user_for_generate
+    from main import app
+    from middleware.auth import require_user, user_for_generate
 
     async def override_user():
         return {"user_id": "test-user-id"}
 
     app.dependency_overrides[user_for_generate] = override_user
+    app.dependency_overrides[require_user] = override_user
     yield
     app.dependency_overrides.clear()
 
@@ -177,7 +179,7 @@ class TestGradeQuiz:
     def _questions(self, n=3):
         questions = []
         for i in range(n):
-            q = MCQuiz(**QUIZ_QUESTIONS_DB[i])
+            q = QuizQuestion(**QUIZ_QUESTIONS_DB[i])
             questions.append(q)
         return questions
     
