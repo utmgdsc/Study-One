@@ -53,7 +53,8 @@ Respond in this exact JSON format:
             "question": "Question text?",
             "options": ["A", "B", "C", "D"],
             "answer": "A",
-            "topic": "Specific Concept Name"
+            "topic": "Specific Concept Name", 
+            "correctionExplanation": "Very short, simple explanation of why A is correct and why B, C, and D are wrong."
         }}
     ]
 }}
@@ -65,6 +66,11 @@ Rules:
 - Generate between 5 and 10 questions
 - The "answer" value must exactly match one of the strings in "options"
 - Vary which option holds the correct answer — do not cluster correct answers on the first option
-- Each question must have non-empty "question", "options" (exactly 4), "answer", and "topic" fields"""
+- Each question must have non-empty "question", "options" (exactly 4), "answer", and "topic" fields
+- Each question's correctionExplanation MUST be a single 1–3 sentence paragraph that:
+  - Clearly states why the correct answer is correct
+  - Briefly mentions why the other options are wrong
+  - Uses simple, student-friendly language
+  """
 
     return prompt

@@ -26,7 +26,10 @@ gemini_service = GeminiService()
 # Enable CORS for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js dev server
+    allow_origins=[
+        "http://localhost:3000",  # Next.js dev server
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -364,10 +367,11 @@ class QuizSubmitRequest(BaseModel):
 class QuestionResult(BaseModel):
     question_index: int
     question: str
-    selected_answer: str 
-    correct_answer: str 
+    selected_answer: str
+    correct_answer: str
     is_correct: bool
     topic: str
+    correction_explanation: Optional[str] = None
 
 class QuizSubmitResponse(BaseModel):
     attempt_id: str
@@ -421,8 +425,9 @@ def parse_and_validate_quiz(raw_response: str) -> list[MCQuiz]:
             quiz_questions.append(MCQuiz(
                 question=q["question"],
                 options=q["options"],
-                answer=q["answer"], 
-                topic=q["topic"]
+                answer=q["answer"],
+                topic=q["topic"],
+                correctionExplanation=q.get("correctionExplanation"),
             ))
         
         return quiz_questions
@@ -452,12 +457,13 @@ def grade_quiz(answers: list[QuestionAnswer], questions: list[MCQuiz]) -> list[Q
         is_correct = ans == q.answer
 
         result = QuestionResult(
-            question_index= i, 
-            question=q.question, 
-            selected_answer=ans, 
-            correct_answer=q.answer, 
-            is_correct=is_correct, 
-            topic=q.topic
+            question_index=i,
+            question=q.question,
+            selected_answer=ans,
+            correct_answer=q.answer,
+            is_correct=is_correct,
+            topic=q.topic,
+            correction_explanation=q.correctionExplanation,
         ) 
         quiz_results.append(result)
     
@@ -541,7 +547,7 @@ async def generate_quiz_questions(
 @app.post("/api/v1/quiz/submit", response_model=QuizSubmitResponse)
 async def submit_quiz(
     request: QuizSubmitRequest,
-    user: UserPayload | None = Depends(user_for_generate),
+    user: UserPayload = Depends(require_user),
 ):
     """Attempt MC Quiz. Grade the user's attempt at the quiz and store the results. """
     
