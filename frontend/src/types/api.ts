@@ -29,6 +29,7 @@ export interface QuizQuestion {
   question: string;
   options: string[];
   answer: string;
+  topic: string;
   /**
    * Optional single explanation covering why the correct answer is right
    * and why the other options are wrong.
@@ -86,15 +87,10 @@ export interface FlashcardSessionCompleteResponse {
 // QUIZ (generate_quiz / submit_quiz)
 // ============================================
 
-/** A quiz question from POST /api/v1/quiz (with topic). */
-export interface MCQuizQuestion extends QuizQuestion {
-  topic: string;
-}
-
 /** Response from POST /api/v1/quiz (generate quiz from notes). */
 export interface GenerateQuizResponse {
   quiz_set_id: string;
-  quiz: MCQuizQuestion[];
+  quiz: QuizQuestion[];
 }
 
 /** Single answer for submit_quiz. */

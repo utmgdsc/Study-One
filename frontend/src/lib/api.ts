@@ -9,8 +9,11 @@ import type {
   FlashcardSessionCompleteResponse,
   GenerateRequest,
   GenerateResponse,
+  GenerateQuizResponse,
   QuizResultResponse,
   QuizExplanationResponse,
+  QuizSubmitRequest,
+  QuizSubmitResponse,
 } from "../types/api";
 import { getAccessToken } from "./auth";
 
@@ -84,6 +87,51 @@ export async function generateStudyPack(
     const errorMessage = error.detail?.[0]?.msg || error.detail || `Request failed with status ${response.status}`;
     throw new Error(errorMessage);
   }
+  return response.json();
+}
+
+/**
+ * Generates quiz questions from user notes via POST /api/v1/quiz.
+ * Stores the quiz in the backend and returns quiz_set_id and questions.
+ */
+export async function generateQuizQuestions(
+  text: string
+): Promise<GenerateQuizResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Submits quiz answers for grading. Returns score and per-question results.
+ */
+export async function submitQuiz(
+  request: QuizSubmitRequest
+): Promise<QuizSubmitResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz/submit`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`,
+    );
+  }
+
   return response.json();
 }
 

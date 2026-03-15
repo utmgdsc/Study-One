@@ -182,6 +182,7 @@ def validate_data(data):
             question=q["question"],
             options=q["options"],
             answer=q["answer"],
+            topic=(q.get("topic") or "").strip() or "General",
             correctionExplanation=q.get("correctionExplanation")
         ))
 
