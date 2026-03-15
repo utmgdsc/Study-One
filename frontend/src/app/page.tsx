@@ -2,8 +2,46 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyPack, requestQuizExplanation } from "@/lib/api";
-import { GenerateResponse, QuizQuestion } from "@/types/api";
+import { generateStudyPack, generateQuizQuestions, requestQuizExplanation, submitQuiz, submitQuizResult } from "@/lib/api";
+import { GenerateResponse, QuizQuestion, QuizSubmitResponse, QuestionResult } from "@/types/api";
+
+const XP_PER_CORRECT = 25;
+const PERFECT_SCORE_BONUS = 15;
+
+function buildPreviewSubmitResult(
+  quiz: QuizQuestion[],
+  answers: (string | null)[],
+): QuizSubmitResponse {
+  const results: QuestionResult[] = quiz.map((q, i) => {
+    const selected = answers[i] ?? "";
+    const is_correct = selected === q.answer;
+    return {
+      question_index: i,
+      question: q.question,
+      selected_answer: selected,
+      correct_answer: q.answer,
+      is_correct,
+      topic: q.topic,
+      correction_explanation: q.correctionExplanation,
+    };
+  });
+  const total_correct = results.filter((r) => r.is_correct).length;
+  const total_questions = results.length;
+  const score = total_questions > 0 ? total_correct / total_questions : 0;
+  let xp_awarded = total_correct * XP_PER_CORRECT;
+  if (total_correct === total_questions && total_questions > 0) {
+    xp_awarded += PERFECT_SCORE_BONUS;
+  }
+  return {
+    attempt_id: "preview",
+    quiz_set_id: "preview",
+    score,
+    total_correct,
+    total_questions,
+    xp_awarded,
+    results,
+  };
+}
 import { useAuth } from "@/context/auth-context";
 import { supabase } from "@/lib/supabase";
 
@@ -33,7 +71,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
+  const [quizSetId, setQuizSetId] = useState<string | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<(string | null)[]>([]);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [submitResult, setSubmitResult] = useState<QuizSubmitResponse | null>(null);
+  const [submitQuizLoading, setSubmitQuizLoading] = useState(false);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user } = useAuth();
 
@@ -45,18 +87,17 @@ export default function Home() {
     if (isDisabled) return;
 
     setStudyPack(null);
+    setQuizSetId(null);
     setQuizAnswers([]);
     setErrorMessage(null);
     setLoading(true);
     try {
-      const response = await generateStudyPack(notes.trim());
-      console.log("Study pack response:", response);
-      setStudyPack(response);
-      setQuizAnswers(
-        Array(response.quiz.length)
-          .fill(null)
-          .map(() => null),
-      );
+      const trimmed = notes.trim();
+      const packResponse = await generateStudyPack(trimmed);
+      setStudyPack({
+        summary: packResponse.summary,
+        quiz: [],
+      });
     } catch (err) {
       console.error("Failed to generate study pack:", err);
       setErrorMessage(toUserFriendlyMessage(err));
@@ -66,6 +107,29 @@ export default function Home() {
     }
   }
 
+  async function handleGenerateQuiz() {
+    if (!studyPack || quizLoading || !notes.trim()) return;
+    setErrorMessage(null);
+    setSubmitResult(null);
+    setQuizLoading(true);
+    try {
+      const quizResponse = await generateQuizQuestions(notes.trim());
+      setStudyPack((prev) =>
+        prev ? { ...prev, quiz: quizResponse.quiz } : null,
+      );
+      setQuizSetId(quizResponse.quiz_set_id);
+      setQuizAnswers(
+        Array(quizResponse.quiz.length)
+          .fill(null)
+          .map(() => null),
+      );
+    } catch (err) {
+      console.error("Failed to generate quiz:", err);
+      setErrorMessage(toUserFriendlyMessage(err));
+    } finally {
+      setQuizLoading(false);
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -86,13 +150,13 @@ export default function Home() {
       previewTimerRef.current = null;
       setLoading(false);
 
-      // sample preview of study pack
+      // sample preview: summary + quiz so both formats are visible (no API, no submit)
       const sample = {
         summary: [
-          "Summary 1", 
-          "Summary 2", 
-          "Summary 3"
-        ], 
+          "Summary 1",
+          "Summary 2",
+          "Summary 3",
+        ],
         quiz: [
           {
             question: "Which option best describes the mitochondria?",
@@ -106,16 +170,15 @@ export default function Home() {
             correctionExplanation:
               "Mitochondria are like tiny batteries for the cell: they turn food into usable energy. " +
               "They do not store DNA (that is mostly the nucleus), they are not the outer membrane that controls entry and exit, " +
-              "and they are not the main place where proteins are made (that is mostly ribosomes.",
+              "and they are not the main place where proteins are made (that is mostly ribosomes).",
+            topic: "Cellular Biology",
           },
         ],
       };
       setStudyPack(sample);
-      setQuizAnswers(
-        Array(sample.quiz.length)
-          .fill(null)
-          .map(() => null),
-      );
+      setQuizSetId(null);
+      setQuizAnswers(Array(sample.quiz.length).fill(null));
+      setSubmitResult(null);
     }, 3000);
   }
 
@@ -135,8 +198,40 @@ export default function Home() {
   }
 
   async function handleSubmitQuiz() {
-    console.log("handleSubmitQuiz called (stub). This branch does not persist quizzes.");
+    if (!studyPack?.quiz.length || submitQuizLoading) return;
+    const filled = studyPack.quiz.map((_, i) => quizAnswers[i]).filter((a): a is string => a != null);
+    if (filled.length !== studyPack.quiz.length) return;
+    setErrorMessage(null);
+
+    // Preview: no quizSetId — show score/answers locally without saving
+    if (!quizSetId) {
+      setSubmitResult(buildPreviewSubmitResult(studyPack.quiz, quizAnswers));
+      return;
+    }
+
+    setSubmitQuizLoading(true);
+    try {
+      const result = await submitQuiz({
+        quiz_id: quizSetId,
+        answers: studyPack.quiz.map((_, i) => ({
+          question_index: i,
+          selected_answer: filled[i] as string,
+        })),
+      });
+      await submitQuizResult(result.total_correct, result.total_questions, quizSetId);
+      setSubmitResult(result);
+    } catch (err) {
+      console.error("Failed to submit quiz:", err);
+      setErrorMessage(toUserFriendlyMessage(err));
+    } finally {
+      setSubmitQuizLoading(false);
+    }
   }
+
+  const allQuestionsAnswered =
+    studyPack?.quiz.length !== undefined &&
+    studyPack.quiz.length > 0 &&
+    studyPack.quiz.every((_, i) => quizAnswers[i] != null);
 
   return (
     <main className="min-h-screen p-6 md:p-10">
@@ -216,10 +311,9 @@ export default function Home() {
           </div>
         </form>
         
-        {/* UI for testing end-to-end connection */}
         {studyPack && !loading && (
           <div className="mt-8 space-y-6">
-            <h1 className="mb-4 text-lg font-bold">Study Pack Display for Connectivity Test Purpose</h1>
+            <h1 className="mb-4 text-lg font-bold">Study Pack</h1>
             {/* Summary Section */}
             <section className="rounded-lg border border-border bg-card p-6">
               <h2 className="mb-4 text-lg font-semibold">Summary</h2>
@@ -231,25 +325,101 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+              {/* Generate quiz button (only when quiz not yet loaded) */}
+              {studyPack.quiz.length === 0 && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={handleGenerateQuiz}
+                    disabled={quizLoading}
+                    className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    {quizLoading ? (
+                      <>
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px] mr-1.5" aria-hidden />
+                        Generating quiz…
+                      </>
+                    ) : (
+                      "Generate quiz"
+                    )}
+                  </button>
+                </div>
+              )}
             </section>
 
-            {/* Quiz Section */}
-            <section className="rounded-lg border border-border bg-card p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Quiz</h2>
-              </div>
-              <div className="space-y-6">
-                {studyPack.quiz.map((q, index) => (
-                  <QuestionDisplay
-                    key={index}
-                    question={q}
-                    index={index}
-                    userId={user?.id ?? null}
-                    onAnswerSelected={handleAnswerSelected}
-                  />
-                ))}
-              </div>
-            </section>
+            {/* Quiz Section (only when quiz has been generated) */}
+            {studyPack.quiz.length > 0 && (
+              <section className="rounded-lg border border-border bg-card p-6">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Quiz</h2>
+                  {!quizLoading && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleGenerateQuiz}
+                        className="rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        Regenerate quiz
+                      </button>
+                      {!submitResult && (
+                        <button
+                          type="button"
+                          onClick={handleSubmitQuiz}
+                          disabled={!allQuestionsAnswered || submitQuizLoading}
+                          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          {submitQuizLoading ? (
+                            <>
+                              <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px] mr-1.5" aria-hidden />
+                              Submitting…
+                            </>
+                          ) : (
+                            "Submit quiz"
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {quizLoading ? (
+                  <div className="flex items-center gap-2 py-8 text-muted-foreground" aria-live="polite">
+                    <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />
+                    <span>Generating new questions…</span>
+                  </div>
+                ) : (
+                  <>
+                    {submitResult && (
+                      <div className="mb-6 rounded-lg border border-border bg-muted/40 p-6">
+                        <p className="text-lg font-semibold">
+                          Score: {submitResult.total_correct} / {submitResult.total_questions}
+                          {submitResult.total_questions > 0 && (
+                            <span className="ml-2 text-muted-foreground font-medium">
+                              ({(100 * submitResult.total_correct / submitResult.total_questions).toFixed(0)}%)
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-2 text-base text-muted-foreground">
+                          XP earned: <span className="font-semibold text-foreground">{submitResult.xp_awarded}</span>
+                        </p>
+                      </div>
+                    )}
+                    <div className="space-y-6">
+                      {studyPack.quiz.map((q, index) => (
+                        <QuestionDisplay
+                          key={index}
+                          question={q}
+                          index={index}
+                          selectedAnswer={quizAnswers[index] ?? null}
+                          result={submitResult?.results.find((r) => r.question_index === index) ?? null}
+                          userId={user?.id ?? null}
+                          onAnswerSelected={handleAnswerSelected}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>
@@ -258,22 +428,25 @@ export default function Home() {
 }
 
 
-// quiz question display for testing end-to-end connectivity
+// before submitting quiz: only selection is shown
+// after submitting quiz: correct/incorrect and explanation are shown
 function QuestionDisplay({
   question,
   index,
+  selectedAnswer,
+  result,
   userId,
   onAnswerSelected,
 }: {
   question: QuizQuestion;
   index: number;
+  selectedAnswer: string | null;
+  result: QuestionResult | null;
   userId: string | null;
   onAnswerSelected?: (index: number, answer: string) => void;
 }) {
-  // answer selected
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  // show answer
-  const [showAnswer, setShowAnswer] = useState(false);
+  const isSubmitted = result !== null;
+  const showAnswer = isSubmitted;
   const [reportOpen, setReportOpen] = useState(false);
   const [reportText, setReportText] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -366,43 +539,50 @@ function QuestionDisplay({
       <h3 className="text-sm font-semibold md:text-base">
         {index + 1}. {question.question}
       </h3>
+      <p className="text-xs text-muted-foreground">Topic: {question.topic}</p>
       <div className="space-y-2">
-        {question.options.map((option, optIndex) => (
-          <button
-            key={optIndex}
-            onClick={() => {
-              setSelectedAnswer(option);
-              setShowAnswer(true);
-              onAnswerSelected?.(index, option);
-            }}
-            disabled={showAnswer}
-            className={`w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-              showAnswer
-                ? option === question.answer
-                  ? "border-green-500 bg-green-50 dark:bg-green-950"
-                  : option === selectedAnswer
-                  ? "border-red-500 bg-red-50 dark:bg-red-950"
-                  : "border-border bg-background opacity-50"
-                : "border-border bg-background hover:border-primary hover:bg-accent"
-            } ${showAnswer ? "cursor-default" : "cursor-pointer"}`}
-          >
-            {option}
-            {showAnswer && option === question.answer && (
-              <span className="ml-2 text-green-600 dark:text-green-400">Correct</span>
-            )}
-            {showAnswer && option === selectedAnswer && option !== question.answer && (
-              <span className="ml-2 text-red-600 dark:text-red-400">Incorrect</span>
-            )}
-          </button>
-        ))}
+        {question.options.map((option, optIndex) => {
+          const isCorrectOption = isSubmitted ? option === result!.correct_answer : option === question.answer;
+          const isUserChoice = option === selectedAnswer;
+          const isWrongChoice = isSubmitted && isUserChoice && !result!.is_correct && option === result!.selected_answer;
+          return (
+            <button
+              key={optIndex}
+              type="button"
+              onClick={() => {
+                if (!isSubmitted) onAnswerSelected?.(index, option);
+              }}
+              disabled={isSubmitted}
+              className={`w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                isSubmitted
+                  ? isCorrectOption
+                    ? "border-green-500 bg-green-50 dark:bg-green-950"
+                    : isWrongChoice
+                    ? "border-red-500 bg-red-50 dark:bg-red-950"
+                    : "border-border bg-background opacity-50"
+                  : isUserChoice
+                  ? "border-primary bg-accent"
+                  : "border-border bg-background hover:border-primary hover:bg-accent"
+              } ${isSubmitted ? "cursor-default" : "cursor-pointer"}`}
+            >
+              {option}
+              {isSubmitted && isCorrectOption && (
+                <span className="ml-2 text-green-600 dark:text-green-400">Correct</span>
+              )}
+              {isSubmitted && isWrongChoice && (
+                <span className="ml-2 text-red-600 dark:text-red-400">Incorrect</span>
+              )}
+            </button>
+          );
+        })}
       </div>
-      {showAnswer && (
+      {showAnswer && result && (
         <div className="mt-3 space-y-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
-          {question.correctionExplanation ? (
+          {(result.correction_explanation ?? question.correctionExplanation) ? (
             <div>
               <p className="font-medium text-foreground">Explanation</p>
               <p className="mt-1 text-muted-foreground">
-                {question.correctionExplanation}
+                {result.correction_explanation ?? question.correctionExplanation}
               </p>
             </div>
           ) : (
@@ -438,8 +618,9 @@ function QuestionDisplay({
       <div className="mt-3 flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-3">
           {showAnswer &&
-            selectedAnswer &&
-            selectedAnswer !== question.answer && (
+            result &&
+            !result.is_correct &&
+            selectedAnswer && (
               <button
                 type="button"
                 onClick={async () => {
@@ -470,7 +651,7 @@ function QuestionDisplay({
           </button>
         </div>
       </div>
-      {whyWrongOpen && showAnswer && selectedAnswer && selectedAnswer !== question.answer && (
+      {whyWrongOpen && showAnswer && result && !result.is_correct && selectedAnswer && (
         <div className="mt-2 space-y-2 rounded-md border border-border bg-card/60 p-3 text-xs">
           <p className="font-medium text-foreground">Why your answer was incorrect</p>
           {whyWrongLoading && (
