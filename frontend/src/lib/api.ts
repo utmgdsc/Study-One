@@ -119,7 +119,7 @@ export async function generateQuizQuestions(
 export async function submitQuiz(
   request: QuizSubmitRequest
 ): Promise<QuizSubmitResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/quiz/submit`, {
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz/attempt`, {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify(request),

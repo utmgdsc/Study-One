@@ -1,5 +1,5 @@
 """
-Unit tests for Generating MCQ Quiz Questions.
+Unit tests for Generating Quiz Questions.
 
 ================================================================================
 ⚠️  API KEY CONSUMPTION WARNING
@@ -46,7 +46,7 @@ import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from main import app, StudyPackRequest, MCQuiz, clean_response
+from main import app, StudyPackRequest, clean_response
 from services.gemini import GeminiService
 from fastapi.testclient import TestClient
 
@@ -752,7 +752,11 @@ class TestGenerateQuizEndpoint:
         body = response.json()
         assert list(body.keys()) == ["quiz_set_id", "quiz"]
         first = body["quiz"][0]
-        assert set(first.keys()) == {"question", "options", "answer", "topic"}
+        required = {"question", "options", "answer", "topic"}
+        allowed = required | {"correctionExplanation"}
+        assert required <= set(first.keys()) <= allowed, (
+            f"Quiz question keys should be {required} with optional correctionExplanation, got {set(first.keys())}"
+        )
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_endpoint_works(self, mock_gemini, client, auth_headers):

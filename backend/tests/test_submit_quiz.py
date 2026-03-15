@@ -1,17 +1,45 @@
+"""
+Unit tests for Quiz Attempt & Autograding Endpoint.
+
+================================================================================
+⚠️  API KEY CONSUMPTION WARNING
+================================================================================
+
+These unit tests use MOCKS and do NOT consume API quota.
+
+To avoid accidental quota usage:
+    - Run unit tests (this file) for regular development
+    - Only use curl when you need to verify the real Gemini response
+
+================================================================================
+HOW TO RUN TESTS
+================================================================================
+
+IMPORTANT: You must be in the backend/ directory to run these tests.
+
+    cd backend
+    source venv/bin/activate  # macOS/Linux
+
+    # Install dependencies
+    pip install -r requirements.txt
+
+    # Run unit tests (no API calls)
+    pytest tests/test_submit_quiz.py -v
+
+================================================================================
+"""
+
 import sys
 import os
-from urllib import response
 import uuid
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pytest
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from main import app, calc_xp, PERFECT_SCORE_BONUS, XP_CORRECT, QuizQuestion, QuestionAnswer, grade_quiz
 
-from services.gemini import GeminiService
 from fastapi.testclient import TestClient
 
 
@@ -231,7 +259,7 @@ class TestScoreCalculation:
     @pytest.mark.usefixtures("mock_supabase")
     def test_all_correct_answers(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -244,7 +272,7 @@ class TestScoreCalculation:
     @pytest.mark.usefixtures("mock_supabase")
     def test_all_wrong_answers(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_WRONG_ANSWERS},
             headers=auth_headers
         )
@@ -257,7 +285,7 @@ class TestScoreCalculation:
     @pytest.mark.usefixtures("mock_supabase")
     def test_partial_correct_answers(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": PARTIAL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -288,7 +316,7 @@ class TestScoreCalculation:
         ]
 
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": answers},
             headers=auth_headers
         )
@@ -304,7 +332,7 @@ class TestPerQuestionResults:
     @pytest.mark.usefixtures("mock_supabase")
     def test_number_of_results(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -313,7 +341,7 @@ class TestPerQuestionResults:
     @pytest.mark.usefixtures("mock_supabase")
     def test_result_all_correct(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -330,7 +358,7 @@ class TestPerQuestionResults:
     @pytest.mark.usefixtures("mock_supabase")
     def test_result_all_wrong(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_WRONG_ANSWERS},
             headers=auth_headers
         )
@@ -348,7 +376,7 @@ class TesQuizAttempt:
     @pytest.mark.usefixtures("mock_supabase")
     def test_attempt_id(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -358,7 +386,7 @@ class TesQuizAttempt:
     @pytest.mark.usefixtures("mock_supabase")
     def test_attempt_stored(self, client, auth_headers, mock_supabase):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -384,7 +412,7 @@ class TesQuizAttempt:
     @pytest.mark.usefixtures("mock_supabase")
     def test_user_activity_stored(self, client, auth_headers, mock_supabase):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -406,7 +434,7 @@ class TesQuizAttempt:
         mock_supabase._attempt_chain.insert.return_value.execute.side_effect = Exception("insert failed")
         
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -420,7 +448,7 @@ class TesQuizAttempt:
     def test_user_activity_stored_when_xp_zero(self, client, auth_headers, mock_supabase):
         """Activity should still be recorded even when no XP is awarded."""
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_WRONG_ANSWERS},
             headers=auth_headers,
         )
@@ -437,7 +465,7 @@ class TestAwardXP:
     @pytest.mark.usefixtures("mock_supabase")
     def test_award_xp_all_correct(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers
         )
@@ -447,7 +475,7 @@ class TestAwardXP:
     @pytest.mark.usefixtures("mock_supabase")
     def test_award_xp_all_wrong(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_WRONG_ANSWERS},
             headers=auth_headers
         )
@@ -457,7 +485,7 @@ class TestAwardXP:
     @pytest.mark.usefixtures("mock_supabase")
     def test_award_xp_partial_correct(self, client, auth_headers):
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": PARTIAL_CORRECT_ANSWERS},
             headers=auth_headers,
         )
@@ -466,7 +494,7 @@ class TestAwardXP:
 
     def test_rpc_called_when_xp_positive(self, client, auth_headers, mock_supabase):
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers,
         )
@@ -475,7 +503,7 @@ class TestAwardXP:
 
     def test_rpc_not_called_when_xp_zero(self, client, auth_headers, mock_supabase):
         client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_WRONG_ANSWERS},
             headers=auth_headers,
         )
@@ -484,7 +512,7 @@ class TestAwardXP:
     def test_xp_rpc_failure_is_non_fatal(self, client, auth_headers, mock_supabase):
         mock_supabase.rpc.return_value.execute.side_effect = Exception("rpc down")
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers,
         )
@@ -494,7 +522,7 @@ class TestAwardXP:
     def test_activity_failure_is_non_fatal(self, client, auth_headers, mock_supabase):
         mock_supabase._activity_chain.insert.return_value.execute.side_effect = Exception("activity down")
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers,
         )
@@ -507,7 +535,7 @@ class TestInputValidation:
     @pytest.mark.usefixtures("mock_supabase")
     def test_less_answers(self, client, auth_headers, mock_supabase):
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS[1:]},
             headers=auth_headers
         )
@@ -520,7 +548,7 @@ class TestInputValidation:
     def test_more_answers(self, client, auth_headers, mock_supabase):
         answers = ALL_CORRECT_ANSWERS + [{"question_index": 5, "selected_answer": "Hi"}]
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": answers},
             headers=auth_headers
         )
@@ -533,7 +561,7 @@ class TestInputValidation:
     def test_duplicate_answers(self, client, auth_headers, mock_supabase):
         answers = ALL_CORRECT_ANSWERS[1:] + [ALL_WRONG_ANSWERS[1]]
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": answers},
             headers=auth_headers
         )
@@ -546,7 +574,7 @@ class TestInputValidation:
     def test_answer_not_in_option(self, client, auth_headers, mock_supabase):
         answers =  [{"question_index": 0, "selected_answer": "NOT VALID"}] + ALL_CORRECT_ANSWERS[1:] 
         response = client.post(
-            "/api/v1/quiz/submit", 
+            "/api/v1/quiz/attempt", 
             json={"quiz_id": QUIZ_SET_ID, "answers": answers},
             headers=auth_headers
         )
@@ -559,7 +587,7 @@ class TestInputValidation:
     def test_missing_quiz_id_field(self, client, auth_headers):
         """Omitting 'quiz_id' should fail validation."""
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers,
         )
@@ -569,7 +597,7 @@ class TestInputValidation:
     def test_missing_answers_field(self, client, auth_headers):
         """Omitting 'answers' should fail validation."""
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID},
             headers=auth_headers,
         )
@@ -579,7 +607,7 @@ class TestInputValidation:
     def test_wrong_type_answers_field(self, client, auth_headers):
         """Omitting 'answers' should fail validation."""
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": "answer"},
             headers=auth_headers,
         )
@@ -589,7 +617,7 @@ class TestInputValidation:
     def test_empty_answers_list(self, client, auth_headers):
         """Empty answers list should be rejected as incomplete."""
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": []},
             headers=auth_headers,
         )
@@ -601,7 +629,7 @@ class TestInputValidation:
         """Blank selected_answer triggers pydantic validation error."""
         bad_answers = [{"question_index": 0, "selected_answer": "   "}] + ALL_CORRECT_ANSWERS[1:]
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": bad_answers},
             headers=auth_headers,
         )
@@ -611,7 +639,7 @@ class TestInputValidation:
     def test_selected_answer_not_string(self, client, auth_headers):
         bad_answers = [{"question_index": 0, "selected_answer": 123}] + ALL_CORRECT_ANSWERS[1:]
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": bad_answers},
             headers=auth_headers,
         )
@@ -621,7 +649,7 @@ class TestInputValidation:
     def test_quiz_index_out_of_range(self, client, auth_headers):
         bad_answers = [{"question_index": 10, "selected_answer": "hi"}] + ALL_CORRECT_ANSWERS[1:]
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": bad_answers},
             headers=auth_headers,
         )
@@ -637,7 +665,7 @@ class TestQuizLookupFailures:
         mock_supabase._quiz_chain.execute.return_value = None
 
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers,
         )
@@ -652,7 +680,7 @@ class TestQuizLookupFailures:
         mock_supabase._quiz_chain.execute.side_effect = Exception("db down")
 
         response = client.post(
-            "/api/v1/quiz/submit",
+            "/api/v1/quiz/attempt",
             json={"quiz_id": QUIZ_SET_ID, "answers": ALL_CORRECT_ANSWERS},
             headers=auth_headers,
         )
