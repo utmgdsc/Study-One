@@ -342,7 +342,7 @@ async def generate_study_pack(
         )
     
 
-@app.post("/api/v1/quiz", response_model=GenerateQuizResponse)
+@app.post("/api/v1/quiz", response_model=GenerateQuizResponse, response_model_exclude_none=True)
 async def generate_quiz_questions(
     request: StudyPackRequest,
     _user: UserPayload | None = Depends(user_for_generate),
