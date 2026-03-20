@@ -7,6 +7,15 @@
 create index if not exists idx_user_activity_user_type_occurred_at
   on public.user_activity (user_id, activity_type, occurred_at desc);
 
+-- Level-from-XP (so this migration updates level even if run after 20250302000002_level_from_xp.sql)
+create or replace function public.xp_to_level(p_xp_total integer)
+returns integer
+language sql
+immutable
+set search_path = public
+as $$
+  select greatest(1, floor((-70 + sqrt(8100 + 40.0 * greatest(0, p_xp_total))) / 20)::integer);
+$$;
 
 -- apply_activity: idempotent per (user_id, activity_type, UTC day)
 -- - inserts into user_activity once per day per activity_type
@@ -91,9 +100,11 @@ begin
     new_longest := greatest(s.longest_streak_days, new_current);
 
     -- Must set both current_streak_days and longest_streak_days in one UPDATE (user_stats CHECK requires longest >= current).
+    -- Also set level from new xp_total so level stays correct even if this migration runs after level_from_xp.
     update public.user_stats
     set
       xp_total = xp_total + p_xp_awarded,
+      level = public.xp_to_level(xp_total + p_xp_awarded),
       current_streak_days = new_current,
       longest_streak_days = new_longest,
       last_active_at = greatest(coalesce(last_active_at, p_occurred_at), p_occurred_at),

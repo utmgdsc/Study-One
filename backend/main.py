@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from services import GeminiService, get_supabase
 from services.gamification import award_flashcard_session_xp, award_quiz_completion_xp
+from services.badge_trigger import evaluate_and_award as evaluate_badge_triggers
 from middleware.auth import require_user, UserPayload, user_for_generate
 from typing import List, Optional
 from enum import Enum
@@ -428,7 +429,7 @@ Rules:
 
     return QuizExplanationResponse(explanation=explanation)
 
-@app.post("/api/v1/quiz", response_model=GenerateQuizResponse)
+@app.post("/api/v1/quiz", response_model=GenerateQuizResponse, response_model_exclude_none=True)
 async def generate_quiz_questions(
     request: StudyPackRequest,
     _user: UserPayload | None = Depends(user_for_generate),
@@ -553,6 +554,10 @@ async def submit_quiz_result(
     except RuntimeError as e:
         logger.warning("Quiz result apply_activity failed: %s", e)
         raise HTTPException(status_code=500, detail="Failed to record quiz result.")
+    try:
+        evaluate_badge_triggers(user["user_id"], user_stats=result["user_stats"])
+    except Exception as e:
+        logger.warning("Badge trigger evaluation failed after quiz result: %s", e)
     return QuizResultResponse(
         applied=result["applied"],
         xp_awarded=result["xp_awarded"],
@@ -694,6 +699,10 @@ async def complete_flashcard_session(
     except RuntimeError as e:
         logger.warning("Flashcard session apply_activity failed: %s", e)
         raise HTTPException(status_code=500, detail="Failed to record session.")
+    try:
+        evaluate_badge_triggers(user["user_id"], user_stats=result["user_stats"])
+    except Exception as e:
+        logger.warning("Badge trigger evaluation failed after flashcard session: %s", e)
     return FlashcardSessionCompleteResponse(
         applied=result["applied"],
         xp_awarded=result["xp_awarded"],
