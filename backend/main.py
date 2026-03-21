@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from services import GeminiService, get_supabase
 from services.gamification import award_flashcard_session_xp, award_quiz_completion_xp
+from services.badge_trigger import evaluate_and_award as evaluate_badge_triggers
 from middleware.auth import require_user, UserPayload, user_for_generate
 from typing import List, Optional
 from enum import Enum
@@ -680,32 +681,6 @@ async def submit_quiz_attempt(
     )
 
     return submit_response
-    
-
-@app.post("/api/v1/quiz/result", response_model=QuizResultResponse)
-async def submit_quiz_result(
-    request: QuizResultRequest,
-    user: UserPayload = Depends(require_user),
-):
-    """Submit quiz completion for XP. Awards 25 XP base + 15 bonus for perfect score. Idempotent per day."""
-    try:
-        result = award_quiz_completion_xp(
-            user_id=user["user_id"],
-            correct=request.correct,
-            total=request.total,
-            quiz_id=request.quiz_id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        logger.warning("Quiz result apply_activity failed: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to record quiz result.")
-    return QuizResultResponse(
-        applied=result["applied"],
-        xp_awarded=result["xp_awarded"],
-        user_stats=result["user_stats"],
-    )
-
 
 @app.post("/api/v1/quiz/explain", response_model=QuizExplanationResponse)
 async def explain_quiz_answer(
@@ -773,6 +748,34 @@ Rules:
 
     return QuizExplanationResponse(explanation=explanation)
 
+
+@app.post("/api/v1/quiz/result", response_model=QuizResultResponse)
+async def submit_quiz_result(
+    request: QuizResultRequest,
+    user: UserPayload = Depends(require_user),
+):
+    """Submit quiz completion for XP. Awards 25 XP base + 15 bonus for perfect score. Idempotent per day."""
+    try:
+        result = award_quiz_completion_xp(
+            user_id=user["user_id"],
+            correct=request.correct,
+            total=request.total,
+            quiz_id=request.quiz_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        logger.warning("Quiz result apply_activity failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to record quiz result.")
+    try:
+        evaluate_badge_triggers(user["user_id"], user_stats=result["user_stats"])
+    except Exception as e:
+        logger.warning("Badge trigger evaluation failed after quiz result: %s", e)
+    return QuizResultResponse(
+        applied=result["applied"],
+        xp_awarded=result["xp_awarded"],
+        user_stats=result["user_stats"],
+    )
 
 
 # ============================================
@@ -909,6 +912,10 @@ async def complete_flashcard_session(
     except RuntimeError as e:
         logger.warning("Flashcard session apply_activity failed: %s", e)
         raise HTTPException(status_code=500, detail="Failed to record session.")
+    try:
+        evaluate_badge_triggers(user["user_id"], user_stats=result["user_stats"])
+    except Exception as e:
+        logger.warning("Badge trigger evaluation failed after flashcard session: %s", e)
     return FlashcardSessionCompleteResponse(
         applied=result["applied"],
         xp_awarded=result["xp_awarded"],

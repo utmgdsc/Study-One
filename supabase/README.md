@@ -10,6 +10,7 @@
    - Run `migrations/20250227000000_profiles_insert_policy.sql`  
    - Run `migrations/20250302000000_user_daily_contributions.sql` (heatmap data)  
    - Run `migrations/20250302001000_user_courses_and_course_filter.sql` (heatmap course dropdown)  
+   - For gamification (XP, streaks, badges): run `migrations/20250302000000_gamification_schema.sql`, `20250302000001_xp_streak_engine.sql`, `20250302000002_level_from_xp.sql`, then `migrations/20250309000000_badges_seed.sql`  
    - (Optional for Canvas) Run `migrations/20250228000000_profiles_canvas_api_key.sql`
 
 2. **Configure Forgot Password redirect URL**  
