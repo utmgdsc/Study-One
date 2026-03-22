@@ -10,9 +10,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 type FlashcardSetRow = {
   id: string;
   topic: string | null;
+  source_text: string | null;
   created_at: string;
   cards: Flashcard[];
 };
+
+/** First non-empty line from notes or topic, max 50 chars. */
+function setTitle(notes: string | null, topic: string | null): string {
+  const text = (notes ?? "").trim() || (topic ?? "").trim();
+  if (!text) return "Untitled set";
+  const line = text.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0);
+  return !line ? "Untitled set" : line.length > 50 ? line.slice(0, 50) + "…" : line;
+}
 
 type SortOption = "recent" | "oldest" | "shortest" | "longest";
 
@@ -39,7 +48,7 @@ export default function FlashcardGalleryPage() {
       try {
         const { data, error: dbError } = await supabase
           .from("flashcards")
-          .select("id, topic, created_at, cards")
+          .select("id, topic, source_text, created_at, cards")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
 
@@ -196,7 +205,7 @@ export default function FlashcardGalleryPage() {
                 <Card className="h-full transition-shadow group-hover:shadow-md">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">
-                      {set.topic?.trim() || "Untitled set"}
+                      {setTitle(set.source_text, set.topic)}
                     </CardTitle>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {new Date(set.created_at).toLocaleString(undefined, {

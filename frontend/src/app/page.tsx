@@ -21,6 +21,16 @@ import { supabase } from "@/lib/supabase";
 const USER_FRIENDLY_FALLBACK =
   "Something went wrong. Please try again.";
 
+/** Derive a short title from notes: first non-empty line, max 50 chars. */
+function studyPackTitleFromNotes(notes: string): string {
+  const line = notes
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!line) return "Study pack";
+  return line.length > 50 ? line.slice(0, 50) + "…" : line;
+}
+
 function toUserFriendlyMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const isTechnical =
@@ -194,6 +204,26 @@ export default function Home() {
             </p>
           </div>
 
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={saveFlashcardsToProfile}
+              onChange={(e) => {
+                const next = e.target.checked;
+                if (next && !user) {
+                  setFlashcardError("Sign in to save flashcards to your profile.");
+                  setSaveFlashcardsToProfile(false);
+                  return;
+                }
+                setFlashcardError(null);
+                setSaveFlashcardsToProfile(next);
+              }}
+              disabled={!user}
+              className="h-3 w-3 rounded border-input"
+            />
+            Save flashcards to profile for later review
+          </label>
+
           <div className="flex flex-col items-start gap-3">
             <button
               type="submit"
@@ -245,7 +275,7 @@ export default function Home() {
         {/* Study pack and flashcards */}
         {studyPack && !loading && (
           <div className="mt-8 space-y-6">
-            <h1 className="mb-4 text-lg font-bold">Study pack</h1>
+            <h1 className="mb-4 text-lg font-bold">{studyPackTitleFromNotes(notes)}</h1>
             {/* Summary Section */}
             <section className="rounded-lg border border-border bg-card p-6">
               <h2 className="mb-4 text-lg font-semibold">Summary</h2>
@@ -451,6 +481,14 @@ function FlashcardPreviewCard({
                     ? "Good"
                     : "Easy";
                 const isSelected = selectedRating === rating;
+                const colourClass =
+                  rating === "again"
+                    ? "bg-red-500/90 text-white hover:bg-red-500"
+                    : rating === "hard"
+                    ? "bg-amber-500/90 text-white hover:bg-amber-500"
+                    : rating === "good"
+                    ? "bg-green-500/90 text-white hover:bg-green-500"
+                    : "bg-blue-500/90 text-white hover:bg-blue-500";
                 return (
                   <button
                     key={rating}
@@ -461,9 +499,7 @@ function FlashcardPreviewCard({
                       void handleRate(rating);
                     }}
                     className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                      isSelected
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      isSelected ? "ring-2 ring-offset-2 ring-foreground " + colourClass : colourClass + " opacity-90"
                     } disabled:opacity-60`}
                   >
                     {label}

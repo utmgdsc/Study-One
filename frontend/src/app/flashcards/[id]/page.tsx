@@ -16,9 +16,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 type FlashcardSetRow = {
   id: string;
   topic: string | null;
+  source_text: string | null;
   created_at: string;
   cards: Flashcard[];
 };
+
+/** Derive a short title from notes or topic: first non-empty line, max 50 chars. */
+function titleFromNotesOrTopic(notes: string | null, topic: string | null): string {
+  const text = (notes ?? "").trim() || (topic ?? "").trim();
+  if (!text) return "Flashcard set";
+  const line = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!line) return "Flashcard set";
+  return line.length > 50 ? line.slice(0, 50) + "…" : line;
+}
 
 type QueueItem = {
   index: number;
@@ -49,6 +62,7 @@ export default function FlashcardReviewPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sessionFinished, setSessionFinished] = useState(false);
   const [repeatCounts, setRepeatCounts] = useState<Record<number, number>>({});
+  const [flipped, setFlipped] = useState(false);
 
   useEffect(() => {
     if (!user || !flashcardSetId) {
@@ -65,7 +79,7 @@ export default function FlashcardReviewPage() {
         // Load all sets for sidebar carousel.
         const { data: allData, error: allErr } = await supabase
           .from("flashcards")
-          .select("id, topic, created_at, cards")
+          .select("id, topic, source_text, created_at, cards")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
         if (allErr) throw allErr;
@@ -216,6 +230,11 @@ export default function FlashcardReviewPage() {
     setCurrentIndex(queue[0].index);
   }, [queue]);
 
+  // Reset answer visibility when advancing to the next card
+  useEffect(() => {
+    setFlipped(false);
+  }, [currentIndex]);
+
   if (!user) {
     return (
       <main className="min-h-screen p-6 md:p-10">
@@ -272,7 +291,7 @@ export default function FlashcardReviewPage() {
       <div className="mx-auto max-w-4xl space-y-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">
-            {setRow.topic?.trim() || "Flashcard set"}
+            {titleFromNotesOrTopic(setRow.source_text, setRow.topic)}
           </h1>
           <p className="text-sm text-muted-foreground">
             Review your cards Anki-style. Difficult cards will come back more often.
@@ -297,51 +316,77 @@ export default function FlashcardReviewPage() {
           ) : (
             <div className="space-y-6">
               <div className="text-xs text-muted-foreground">
-                Card {currentIndex + 1} of {setRow.cards.length}
+                Card {currentIndex! + 1} of {setRow.cards.length}
               </div>
-              <Card className="mx-auto max-w-xl">
-                <CardHeader>
-                  <CardTitle className="text-sm text-muted-foreground">
-                    Question
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-base font-medium text-left">{currentCard.question}</p>
-                </CardContent>
-              </Card>
-              <details className="mx-auto max-w-xl rounded-lg border border-dashed border-border bg-background/60 p-4 text-left">
-                <summary className="cursor-pointer text-sm font-medium text-foreground">
-                  Show answer
-                </summary>
-                <p className="mt-3 text-sm text-foreground">{currentCard.answer}</p>
-              </details>
-
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  How well did you know this?
-                </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {(["again", "hard", "good", "easy"] as AnkiRating[]).map((rating) => {
-                    const label =
-                      rating === "again"
-                        ? "Again"
-                        : rating === "hard"
-                        ? "Hard"
-                        : rating === "good"
-                        ? "Good"
-                        : "Easy";
-                    return (
-                      <button
-                        key={rating}
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => void handleRate(rating)}
-                        className="rounded-full bg-muted px-4 py-1.5 text-xs font-medium text-foreground hover:bg-muted/80 disabled:opacity-60"
+              <div className="mx-auto max-w-xl perspective-[1000px]">
+                <div
+                  className={`relative min-h-[220px] w-full cursor-pointer rounded-lg border border-border bg-card shadow-sm transition-transform duration-500 transform-3d ${
+                    flipped ? "transform-[rotateY(180deg)]" : ""
+                  }`}
+                  onClick={() => setFlipped((f) => !f)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setFlipped((f) => !f);
+                    }
+                  }}
+                  aria-label={flipped ? "Show question" : "Reveal answer"}
+                >
+                  <div className="absolute inset-0 flex flex-col rounded-lg border-0 bg-card p-6 text-left backface-hidden">
+                    <p className="text-xs text-muted-foreground">Question</p>
+                    <p className="mt-3 flex-1 text-base font-medium text-foreground">
+                      {currentCard.question}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">Tap to reveal answer</p>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col rounded-lg border-0 bg-card p-6 text-left transform-[rotateY(180deg)] backface-hidden">
+                    <p className="text-xs text-muted-foreground">Answer</p>
+                    <p className="mt-3 flex-1 text-sm text-foreground">{currentCard.answer}</p>
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        How well did you know this?
+                      </p>
+                      <div
+                        className="flex flex-wrap gap-2"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {label}
-                      </button>
-                    );
-                  })}
+                        {(["again", "hard", "good", "easy"] as AnkiRating[]).map((rating) => {
+                          const label =
+                            rating === "again"
+                              ? "Again"
+                              : rating === "hard"
+                              ? "Hard"
+                              : rating === "good"
+                              ? "Good"
+                              : "Easy";
+                          const buttonClass =
+                            rating === "again"
+                              ? "rounded-full bg-red-500/90 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-60"
+                              : rating === "hard"
+                              ? "rounded-full bg-amber-500/90 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-500 disabled:opacity-60"
+                              : rating === "good"
+                              ? "rounded-full bg-green-500/90 px-4 py-1.5 text-xs font-medium text-white hover:bg-green-500 disabled:opacity-60"
+                              : "rounded-full bg-blue-500/90 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60";
+                          return (
+                            <button
+                              key={rating}
+                              type="button"
+                              disabled={submitting}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleRate(rating);
+                              }}
+                              className={buttonClass}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -367,7 +412,7 @@ export default function FlashcardReviewPage() {
                   <Card className="min-w-[200px] max-w-[220px] transition-shadow hover:shadow-md">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm truncate">
-                        {set.topic?.trim() || "Untitled set"}
+                        {titleFromNotesOrTopic(set.source_text, set.topic)}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-0 text-xs text-muted-foreground space-y-1.5">
