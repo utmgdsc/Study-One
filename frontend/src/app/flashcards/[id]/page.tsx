@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
@@ -10,7 +10,7 @@ import {
   submitFlashcardReview,
   submitFlashcardSessionComplete,
 } from "@/lib/api";
-import type { AnkiRating, Flashcard } from "@/types/api";
+import type { AnkiRating, Flashcard, FlashcardSessionCompleteResponse } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type FlashcardSetRow = {
@@ -46,6 +46,45 @@ const RATING_OFFSETS: Record<AnkiRating, number> = {
   easy: 10,
 };
 
+/** Next queue after rating the front card; empty means the session is complete. */
+function computeNextQueueAfterRate(
+  prev: QueueItem[],
+  rating: AnkiRating,
+  repeatCounts: Record<number, number>,
+): QueueItem[] {
+  if (!prev.length) return prev;
+  const [, ...rest] = prev;
+  const ratedIndex = prev[0].index;
+
+  const repeatsSoFar = repeatCounts[ratedIndex] ?? 0;
+  const maxRepeats = rating === "again" ? 2 : rating === "hard" ? 1 : 0;
+  const shouldRequeue = repeatsSoFar < maxRepeats;
+
+  if (!rest.length && !shouldRequeue) {
+    return [];
+  }
+
+  const updated = [...rest];
+  if (shouldRequeue) {
+    const offset = RATING_OFFSETS[rating] ?? 5;
+    const insertPosition = Math.min(offset, updated.length);
+    updated.splice(insertPosition, 0, { index: ratedIndex, position: 0 });
+  }
+
+  return updated.map((item, idx) => ({ ...item, position: idx }));
+}
+
+function sessionCompleteErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const isTechnical =
+    /request failed with status \d+/i.test(raw) ||
+    /^status \d+/i.test(raw) ||
+    /network|fetch|econnrefused|timeout/i.test(raw);
+  return isTechnical
+    ? "Could not record your session XP. Your reviews were saved."
+    : raw;
+}
+
 export default function FlashcardReviewPage() {
   const params = useParams<{ id: string }>();
   const flashcardSetId = params?.id;
@@ -63,6 +102,12 @@ export default function FlashcardReviewPage() {
   const [sessionFinished, setSessionFinished] = useState(false);
   const [repeatCounts, setRepeatCounts] = useState<Record<number, number>>({});
   const [flipped, setFlipped] = useState(false);
+  const [sessionGamification, setSessionGamification] =
+    useState<FlashcardSessionCompleteResponse | null>(null);
+  const [sessionGamificationError, setSessionGamificationError] = useState<string | null>(
+    null,
+  );
+  const sessionCompleteRequestedRef = useRef(false);
 
   useEffect(() => {
     if (!user || !flashcardSetId) {
@@ -70,6 +115,7 @@ export default function FlashcardReviewPage() {
       return;
     }
 
+    const userId = user.id;
     let cancelled = false;
 
     async function load() {
@@ -80,7 +126,7 @@ export default function FlashcardReviewPage() {
         const { data: allData, error: allErr } = await supabase
           .from("flashcards")
           .select("id, topic, source_text, created_at, cards")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .order("created_at", { ascending: false });
         if (allErr) throw allErr;
         const all = (allData ?? []) as unknown as FlashcardSetRow[];
@@ -126,6 +172,9 @@ export default function FlashcardReviewPage() {
         );
 
         if (!cancelled) {
+          sessionCompleteRequestedRef.current = false;
+          setSessionGamification(null);
+          setSessionGamificationError(null);
           setAllSets(all);
           setSetRow(active);
           setQueue(initialQueue);
@@ -170,49 +219,37 @@ export default function FlashcardReviewPage() {
       return;
     }
 
+    const ratedCardIndex = currentIndex;
+
     setSubmitting(true);
     setCurrentRating(rating);
     try {
-      await submitFlashcardReview(setRow.id, currentIndex, rating);
+      await submitFlashcardReview(setRow.id, ratedCardIndex, rating);
 
-      setQueue((prev) => {
-        if (!prev.length) return prev;
-        const [, ...rest] = prev;
+      const nextQueue = computeNextQueueAfterRate(queue, rating, repeatCounts);
 
-        // Decide whether to re-queue this card during this session.
-        // - good/easy: considered learned for the session → do not requeue
-        // - hard: allow one extra repeat
-        // - again: allow two extra repeats
-        const repeatsSoFar = repeatCounts[currentIndex] ?? 0;
-        const maxRepeats =
-          rating === "again" ? 2 : rating === "hard" ? 1 : 0;
-        const shouldRequeue = repeatsSoFar < maxRepeats;
-
-        if (!rest.length && !shouldRequeue) {
-          setSessionFinished(true);
-          void submitFlashcardSessionComplete(setRow.id).catch(() => {});
-          return [];
-        }
-
-        const updated = [...rest];
-        if (shouldRequeue) {
-          const offset = RATING_OFFSETS[rating] ?? 5;
-          const insertPosition = Math.min(offset, updated.length);
-          updated.splice(insertPosition, 0, { index: currentIndex, position: 0 });
-        }
-
-        const next = updated.map((item, idx) => ({ ...item, position: idx }));
-        if (!next.length) {
-          setSessionFinished(true);
-          void submitFlashcardSessionComplete(setRow.id).catch(() => {});
-        }
-        return next;
-      });
-
+      if (nextQueue.length === 0) {
+        setSessionFinished(true);
+      }
+      setQueue(nextQueue);
       setRepeatCounts((prev) => ({
         ...prev,
-        [currentIndex]: (prev[currentIndex] ?? 0) + 1,
+        [ratedCardIndex]: (prev[ratedCardIndex] ?? 0) + 1,
       }));
+
+      if (nextQueue.length === 0 && !sessionCompleteRequestedRef.current) {
+        sessionCompleteRequestedRef.current = true;
+        setSessionGamificationError(null);
+        try {
+          const res = await submitFlashcardSessionComplete(setRow.id);
+          setSessionGamification(res);
+        } catch (err) {
+          console.error("Failed to record flashcard session XP:", err);
+          sessionCompleteRequestedRef.current = false;
+          setSessionGamification(null);
+          setSessionGamificationError(sessionCompleteErrorMessage(err));
+        }
+      }
     } catch (err) {
       console.error("Failed to submit flashcard review:", err);
       setError("Could not save your rating. Please try again.");
@@ -306,6 +343,25 @@ export default function FlashcardReviewPage() {
                 You have finished this review session. You can always come back later to keep
                 reinforcing the material.
               </p>
+              {sessionGamification && !sessionGamificationError && (
+                <p className="text-base text-muted-foreground">
+                  {sessionGamification.applied ? (
+                    <>
+                      XP earned:{" "}
+                      <span className="font-semibold text-foreground">
+                        {sessionGamification.xp_awarded}
+                      </span>
+                    </>
+                  ) : (
+                    <span>
+                      Daily flashcard session XP was already counted today. Keep studying!
+                    </span>
+                  )}
+                </p>
+              )}
+              {sessionGamificationError && (
+                <p className="text-sm text-destructive">{sessionGamificationError}</p>
+              )}
               <Link
                 href="/flashcards"
                 className="inline-flex items-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"

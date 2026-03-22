@@ -16,6 +16,7 @@ import {
   type AnkiRating,
   type Flashcard,
   type FlashcardResponse,
+  type FlashcardSessionCompleteResponse,
   type GenerateResponse,
   type QuizQuestion,
   type QuizSubmitResponse,
@@ -540,6 +541,7 @@ export default function Home() {
                   </label>
                 </div>
                 <FlashcardGridPreview
+                  key={flashcardSet.flashcard_set_id}
                   flashcardSet={flashcardSet}
                   sourceLength={notes.length}
                   userId={user?.id ?? null}
@@ -583,21 +585,77 @@ function FlashcardGridPreview({
     sourceLength < 800 ? 5 : sourceLength < 2000 ? 8 : Math.min(10, flashcardSet.flashcards.length);
   const cardsToShow = flashcardSet.flashcards.slice(0, maxCards);
 
+  const [previewGamification, setPreviewGamification] =
+    useState<FlashcardSessionCompleteResponse | null>(null);
+  const [previewGamificationError, setPreviewGamificationError] = useState<string | null>(null);
+  const previewSessionCompleteRef = useRef(false);
+  const previewRatedCountRef = useRef(0);
+
+  function schedulePreviewSessionCompleteIfDone(nextSize: number) {
+    if (
+      nextSize < cardsToShow.length ||
+      !cardsToShow.length ||
+      !savingEnabled ||
+      !userId ||
+      flashcardSet.flashcard_set_id === "preview-set"
+    ) {
+      return;
+    }
+    queueMicrotask(() => {
+      if (previewSessionCompleteRef.current) return;
+      previewSessionCompleteRef.current = true;
+      setPreviewGamificationError(null);
+      submitFlashcardSessionComplete(flashcardSet.flashcard_set_id)
+        .then((res) => setPreviewGamification(res))
+        .catch((err) => {
+          previewSessionCompleteRef.current = false;
+          setPreviewGamification(null);
+          console.error("Failed to record flashcard session XP:", err);
+          setPreviewGamificationError(toUserFriendlyMessage(err));
+        });
+    });
+  }
+
   if (!cardsToShow.length) return null;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      {cardsToShow.map((card, index) => (
-        <FlashcardPreviewCard
-          key={index}
-          card={card}
-          index={index}
-          flashcardSetId={flashcardSet.flashcard_set_id}
-          userId={userId}
-          isPreview={flashcardSet.flashcard_set_id === "preview-set"}
-          savingEnabled={savingEnabled}
-        />
-      ))}
+    <div className="space-y-3">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {cardsToShow.map((card, index) => (
+          <FlashcardPreviewCard
+            key={index}
+            card={card}
+            index={index}
+            flashcardSetId={flashcardSet.flashcard_set_id}
+            userId={userId}
+            isPreview={flashcardSet.flashcard_set_id === "preview-set"}
+            savingEnabled={savingEnabled}
+            onReviewSaved={() => {
+              previewRatedCountRef.current += 1;
+              schedulePreviewSessionCompleteIfDone(previewRatedCountRef.current);
+            }}
+          />
+        ))}
+      </div>
+      {previewGamification && !previewGamificationError && (
+        <p className="text-sm text-muted-foreground">
+          {previewGamification.applied ? (
+            <>
+              Session XP:{" "}
+              <span className="font-semibold text-foreground">
+                {previewGamification.xp_awarded}
+              </span>
+            </>
+          ) : (
+            <span>
+              Daily flashcard session XP was already counted today. Keep studying!
+            </span>
+          )}
+        </p>
+      )}
+      {previewGamificationError && (
+        <p className="text-xs text-destructive">{previewGamificationError}</p>
+      )}
     </div>
   );
 }
@@ -609,6 +667,7 @@ type FlashcardPreviewCardProps = {
   userId: string | null;
   isPreview?: boolean;
   savingEnabled: boolean;
+  onReviewSaved?: () => void;
 };
 
 function FlashcardPreviewCard({
@@ -618,6 +677,7 @@ function FlashcardPreviewCard({
   userId,
   isPreview,
   savingEnabled,
+  onReviewSaved,
 }: FlashcardPreviewCardProps) {
   const [flipped, setFlipped] = useState(false);
   const [selectedRating, setSelectedRating] = useState<AnkiRating | null>(null);
@@ -632,7 +692,7 @@ function FlashcardPreviewCard({
       setError(
         !userId
           ? "Sign in from the top-right to save your flashcard progress."
-          : "Enable "Save to profile" and regenerate to track progress and update your heatmap.",
+          : 'Enable "Save to profile" and regenerate to track progress and update your heatmap.',
       );
       return;
     }
@@ -642,7 +702,7 @@ function FlashcardPreviewCard({
     try {
       await submitFlashcardReview(flashcardSetId, index, rating);
       setSelectedRating(rating);
-      await submitFlashcardSessionComplete(flashcardSetId);
+      onReviewSaved?.();
     } catch (err) {
       console.error("Failed to submit flashcard review:", err);
       setError(toUserFriendlyMessage(err));
