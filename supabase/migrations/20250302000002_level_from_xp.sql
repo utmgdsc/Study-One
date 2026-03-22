@@ -127,7 +127,7 @@ revoke all on function public.apply_activity(uuid, text, integer, timestamptz, j
 grant execute on function public.apply_activity(uuid, text, integer, timestamptz, jsonb) to service_role;
 
 
--- Backfill level for existing users (in case they already have XP)
+-- Backfill level for existing users (fix any row where level != xp_to_level(xp_total))
 update public.user_stats
 set level = public.xp_to_level(xp_total)
-where level < public.xp_to_level(xp_total);
+where level is distinct from public.xp_to_level(xp_total);

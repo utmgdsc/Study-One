@@ -12,7 +12,11 @@ import type {
   FlashcardSessionCompleteResponse,
   GenerateRequest,
   GenerateResponse,
+  GenerateQuizResponse,
   QuizResultResponse,
+  QuizExplanationResponse,
+  QuizSubmitRequest,
+  QuizSubmitResponse,
 } from "../types/api";
 import { getAccessToken } from "./auth";
 
@@ -143,23 +147,58 @@ export async function submitFlashcardReview(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Request failed with status ${response.status}`,
-    );
+    throw new Error(error.detail || `Request failed with status ${response.status}`);
   }
 }
 
 /**
- * Fetch the latest rating per card for a flashcard set, ordered from hardest
- * (again → hard → good → easy). Used to prioritize difficult cards.
+ * Generates quiz questions from user notes via POST /api/v1/quiz.
+ */
+export async function generateQuizQuestions(
+  text: string
+): Promise<GenerateQuizResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `Request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Submits quiz answers for grading. Returns score and per-question results.
+ */
+export async function submitQuiz(
+  request: QuizSubmitRequest
+): Promise<QuizSubmitResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz/attempt`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `Request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch the latest rating per card for a flashcard set.
  */
 export async function fetchFlashcardHistory(
   flashcardSetId: string,
 ): Promise<FlashcardHistoryResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/api/v1/flashcards/${encodeURIComponent(
-      flashcardSetId,
-    )}/history`,
+    `${API_BASE_URL}/api/v1/flashcards/${encodeURIComponent(flashcardSetId)}/history`,
     {
       method: "GET",
       headers: await authHeaders(),
@@ -168,9 +207,7 @@ export async function fetchFlashcardHistory(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.detail || `Request failed with status ${response.status}`,
-    );
+    throw new Error(error.detail || `Request failed with status ${response.status}`);
   }
 
   return response.json();
@@ -218,6 +255,42 @@ export async function submitQuizResult(
   if (quizId) body.quiz_id = quizId;
 
   const response = await fetch(`${API_BASE_URL}/api/v1/quiz/result`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(
+      error.detail || `Request failed with status ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Requests an AI explanation for a specific quiz question, optionally with a follow-up prompt.
+ */
+export async function requestQuizExplanation(params: {
+  question: string;
+  options: string[];
+  answer: string;
+  userAnswer?: string | null;
+  correctionExplanation?: string | null;
+  followupPrompt?: string | null;
+}): Promise<QuizExplanationResponse> {
+  const body = {
+    question: params.question,
+    options: params.options,
+    answer: params.answer,
+    user_answer: params.userAnswer ?? null,
+    correction_explanation: params.correctionExplanation ?? null,
+    followup_prompt: params.followupPrompt?.trim() || null,
+  };
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/quiz/explain`, {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify(body),

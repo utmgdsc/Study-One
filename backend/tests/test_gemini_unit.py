@@ -82,7 +82,7 @@ class TestGeminiService:
         """Test that GeminiService initializes (lazy: no model until first call)."""
         service = GeminiService()
         assert service._model is None
-        assert service._model_name == "gemini-2.0-flash"
+        assert service._model_name == "gemini-2.5-flash"
         assert service._configured is False
 
     def test_init_with_custom_model(self):

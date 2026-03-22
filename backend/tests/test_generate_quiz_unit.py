@@ -1,5 +1,5 @@
 """
-Unit tests for Generating MCQ Quiz Questions.
+Unit tests for Generating Quiz Questions.
 
 ================================================================================
 ⚠️  API KEY CONSUMPTION WARNING
@@ -10,6 +10,14 @@ These unit tests use MOCKS and do NOT consume API quota.
 To avoid accidental quota usage:
     - Run unit tests (this file) for regular development
     - Only run test_quiz.py when you need to verify the API connection
+
+================================================================================
+MOCKING
+================================================================================
+
+- GeminiService: Mocked with @patch.object(GeminiService, 'call_gemini')
+- Supabase: Automatically mocked globally via conftest.py (patch_supabase fixture)
+  All tests automatically use mock_supabase unless explicitly unpatched
 
 ================================================================================
 HOW TO RUN TESTS
@@ -36,9 +44,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import pytest
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from main import app, StudyPackRequest, MCQuiz, clean_response
+from main import app, StudyPackRequest, clean_response
 from services.gemini import GeminiService
 from fastapi.testclient import TestClient
 
@@ -53,8 +61,36 @@ from pydantic import ValidationError
 
 @pytest.fixture
 def client():
-    """Create a test client for the FastAPI app"""
     return TestClient(app)
+
+
+@pytest.fixture
+def auth_headers():
+    return {"Authorization": "Bearer test-token"}
+
+
+@pytest.fixture(autouse=True)
+def mock_auth():
+    """Mock auth so tests never hit real JWT validation."""
+    with patch("middleware.auth.require_user", return_value={"user_id": "test-user-id"}):
+        with patch("middleware.auth.user_for_generate", return_value={"user_id": "test-user-id"}):
+            yield
+
+
+@pytest.fixture(autouse=True)
+def mock_supabase():
+    """Mock Supabase so tests never hit a real DB."""
+    mock_sb = MagicMock()
+    # Mock flashcards insert — returns a fake UUID
+    mock_sb.table.return_value.insert.return_value.execute.return_value.data = [
+        {"id": "test-flashcard-set-uuid"}
+    ]
+    # Mock user_stats maybe_single
+    mock_sb.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = {
+        "xp_total": 0
+    }
+    with patch("main.get_supabase", return_value=mock_sb):
+        yield mock_sb
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +367,7 @@ class TestJSONValidation:
         )
 
         assert response.status_code == 500
-        assert "at least 5" in response.json()["detail"]
+        assert "5-10" in response.json()["detail"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_more_than_10_questions(self, mock_gemini, client, auth_headers):
@@ -345,7 +381,7 @@ class TestJSONValidation:
         )
 
         assert response.status_code == 500
-        assert "at most 10" in response.json()["detail"]
+        assert "5-10" in response.json()["detail"]
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_missing_quiz_key(self, mock_gemini, client, auth_headers):
@@ -714,9 +750,13 @@ class TestGenerateQuizEndpoint:
 
         assert response.status_code == 200
         body = response.json()
-        assert list(body.keys()) == ["quiz"]
+        assert list(body.keys()) == ["quiz_set_id", "quiz"]
         first = body["quiz"][0]
-        assert set(first.keys()) == {"question", "options", "answer", "topic"}
+        required = {"question", "options", "answer", "topic"}
+        allowed = required | {"correctionExplanation"}
+        assert required <= set(first.keys()) <= allowed, (
+            f"Quiz question keys should be {required} with optional correctionExplanation, got {set(first.keys())}"
+        )
 
     @patch.object(GeminiService, 'call_gemini', new_callable=AsyncMock)
     def test_endpoint_works(self, mock_gemini, client, auth_headers):
@@ -760,7 +800,7 @@ class TestGenerateQuizEndpoint:
                 json={"text": notes},
                 headers=auth_headers,
             )
-            assert response.status_code == 200, f"Failed for input: {notes!r}"
+            assert response.status_code == 200, f"Failed for input: {notes!r}"    
 
 
 
