@@ -34,6 +34,12 @@ class _Settings:
         return os.getenv("SUPABASE_JWT_SECRET", "")
 
     @property
+    def SUPABASE_JWT_PUBLIC_KEY(self) -> str:
+        key = os.getenv("SUPABASE_JWT_PUBLIC_KEY", "")
+        # Handle escaped newlines and strip accidental whitespace
+        return key.replace("\\n", "\n").strip()
+
+    @property
     def REQUIRE_AUTH_FOR_GENERATE(self) -> bool:
         """When True, /api/v1/generate and /generate-study-pack require Authorization. When False, anyone can call them."""
         v = os.getenv("REQUIRE_AUTH_FOR_GENERATE", "false").lower()
