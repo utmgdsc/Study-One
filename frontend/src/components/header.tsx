@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 export function Header() {
   const pathname = usePathname();
   const isProfile = pathname === "/profile";
+  const isFlashcards = pathname === "/flashcards" || pathname.startsWith("/flashcards/");
   const [helpOpen, setHelpOpen] = useState(false);
 
   const helpTitle = isProfile ? "How to use your profile" : "How to use Socrato";
@@ -32,6 +33,13 @@ export function Header() {
           >
             <span className="text-lg font-medium leading-none">?</span>
           </button>
+          <Link
+            href="/flashcards"
+            className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-current={isFlashcards ? "page" : undefined}
+          >
+            Review
+          </Link>
           <Link
             href="/profile"
             className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

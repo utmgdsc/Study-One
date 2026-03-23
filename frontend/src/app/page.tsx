@@ -2,11 +2,52 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
-import { generateStudyPack, generateQuizQuestions, requestQuizExplanation, submitQuiz, submitQuizResult } from "@/lib/api";
-import { GenerateResponse, QuizQuestion, QuizSubmitResponse, QuestionResult } from "@/types/api";
+import {
+  generateStudyPack,
+  generateFlashcards,
+  generateQuizQuestions,
+  requestQuizExplanation,
+  submitFlashcardReview,
+  submitFlashcardSessionComplete,
+  submitQuiz,
+  submitQuizResult,
+} from "@/lib/api";
+import {
+  type AnkiRating,
+  type Flashcard,
+  type FlashcardResponse,
+  type FlashcardSessionCompleteResponse,
+  type GenerateResponse,
+  type QuizQuestion,
+  type QuizSubmitResponse,
+  type QuestionResult,
+} from "@/types/api";
+import { useAuth } from "@/context/auth-context";
+import { supabase } from "@/lib/supabase";
+
+const USER_FRIENDLY_FALLBACK = "Something went wrong. Please try again.";
 
 const XP_PER_CORRECT = 25;
 const PERFECT_SCORE_BONUS = 15;
+
+/** Derive a short title from notes: first non-empty line, max 50 chars. */
+function studyPackTitleFromNotes(notes: string): string {
+  const line = notes
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!line) return "Study pack";
+  return line.length > 50 ? line.slice(0, 50) + "…" : line;
+}
+
+function toUserFriendlyMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const isTechnical =
+    /request failed with status \d+/i.test(raw) ||
+    /^status \d+/i.test(raw) ||
+    /network|fetch|econnrefused|timeout/i.test(raw);
+  return isTechnical ? USER_FRIENDLY_FALLBACK : raw;
+}
 
 function buildPreviewSubmitResult(
   quiz: QuizQuestion[],
@@ -42,35 +83,16 @@ function buildPreviewSubmitResult(
     results,
   };
 }
-import { useAuth } from "@/context/auth-context";
-import { supabase } from "@/lib/supabase";
-
-const USER_FRIENDLY_FALLBACK =
-  "Something went wrong. Please try again.";
-
-function toUserFriendlyMessage(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  const isTechnical =
-    /request failed with status \d+/i.test(raw) ||
-    /^status \d+/i.test(raw) ||
-    /network|fetch|econnrefused|timeout/i.test(raw);
-  return isTechnical ? USER_FRIENDLY_FALLBACK : raw;
-}
-
-function generateQuizId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return (crypto as Crypto).randomUUID();
-  }
-  return `quiz-${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 10)}`;
-}
 
 export default function Home() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [studyPack, setStudyPack] = useState<GenerateResponse | null>(null);
+  const [flashcardSet, setFlashcardSet] = useState<FlashcardResponse | null>(null);
+  const [flashcardError, setFlashcardError] = useState<string | null>(null);
+  const [saveFlashcardsToProfile, setSaveFlashcardsToProfile] = useState(false);
+  const [flashcardsSaved, setFlashcardsSaved] = useState(false);
   const [quizSetId, setQuizSetId] = useState<string | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<(string | null)[]>([]);
   const [quizLoading, setQuizLoading] = useState(false);
@@ -87,21 +109,43 @@ export default function Home() {
     if (isDisabled) return;
 
     setStudyPack(null);
+    setFlashcardSet(null);
     setQuizSetId(null);
     setQuizAnswers([]);
+    setSubmitResult(null);
     setErrorMessage(null);
+    setFlashcardError(null);
+    setFlashcardsSaved(false);
     setLoading(true);
+
     try {
-      const trimmed = notes.trim();
-      const packResponse = await generateStudyPack(trimmed);
-      setStudyPack({
-        summary: packResponse.summary,
-        quiz: [],
-      });
+      const includeAuthForFlashcards = saveFlashcardsToProfile && !!user;
+      const [packResult, flashcardsResult] = await Promise.allSettled([
+        generateStudyPack(notes.trim()),
+        generateFlashcards(notes.trim(), undefined, { includeAuth: includeAuthForFlashcards }),
+      ] as const);
+
+      if (packResult.status === "fulfilled") {
+        setStudyPack({ summary: packResult.value.summary, quiz: [] });
+      } else {
+        console.error("Failed to generate study pack:", packResult.reason);
+        setStudyPack(null);
+        setErrorMessage(toUserFriendlyMessage(packResult.reason));
+      }
+
+      if (flashcardsResult.status === "fulfilled") {
+        setFlashcardSet(flashcardsResult.value);
+        setFlashcardsSaved(includeAuthForFlashcards);
+      } else {
+        console.error("Failed to generate flashcards:", flashcardsResult.reason);
+        setFlashcardSet(null);
+        setFlashcardError(toUserFriendlyMessage(flashcardsResult.reason));
+      }
     } catch (err) {
       console.error("Failed to generate study pack:", err);
       setErrorMessage(toUserFriendlyMessage(err));
       setStudyPack(null);
+      setFlashcardSet(null);
     } finally {
       setLoading(false);
     }
@@ -118,11 +162,7 @@ export default function Home() {
         prev ? { ...prev, quiz: quizResponse.quiz } : null,
       );
       setQuizSetId(quizResponse.quiz_set_id);
-      setQuizAnswers(
-        Array(quizResponse.quiz.length)
-          .fill(null)
-          .map(() => null),
-      );
+      setQuizAnswers(Array(quizResponse.quiz.length).fill(null));
     } catch (err) {
       console.error("Failed to generate quiz:", err);
       setErrorMessage(toUserFriendlyMessage(err));
@@ -131,65 +171,12 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    return () => {
-      if (previewTimerRef.current !== null) {
-        clearTimeout(previewTimerRef.current);
-        previewTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  function previewLoading() {
-    if (previewTimerRef.current !== null) {
-      clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-    setLoading(true);
-    previewTimerRef.current = setTimeout(() => {
-      previewTimerRef.current = null;
-      setLoading(false);
-
-      // sample preview: summary + quiz so both formats are visible (no API, no submit)
-      const sample = {
-        summary: [
-          "Summary 1",
-          "Summary 2",
-          "Summary 3",
-        ],
-        quiz: [
-          {
-            question: "Which option best describes the mitochondria?",
-            options: [
-              "They make energy for the cell",
-              "They store genetic information",
-              "They control what enters and leaves the cell",
-              "They make proteins for the cell",
-            ],
-            answer: "They make energy for the cell",
-            correctionExplanation:
-              "Mitochondria are like tiny batteries for the cell: they turn food into usable energy. " +
-              "They do not store DNA (that is mostly the nucleus), they are not the outer membrane that controls entry and exit, " +
-              "and they are not the main place where proteins are made (that is mostly ribosomes).",
-            topic: "Cellular Biology",
-          },
-        ],
-      };
-      setStudyPack(sample);
-      setQuizSetId(null);
-      setQuizAnswers(Array(sample.quiz.length).fill(null));
-      setSubmitResult(null);
-    }, 3000);
-  }
-
   function handleAnswerSelected(questionIndex: number, answer: string) {
     setQuizAnswers((prev) => {
       const next =
         prev.length === (studyPack?.quiz.length ?? 0)
           ? [...prev]
-          : Array(studyPack?.quiz.length ?? 0)
-              .fill(null)
-              .map(() => null);
+          : Array(studyPack?.quiz.length ?? 0).fill(null);
       if (questionIndex >= 0 && questionIndex < next.length) {
         next[questionIndex] = answer;
       }
@@ -199,7 +186,9 @@ export default function Home() {
 
   async function handleSubmitQuiz() {
     if (!studyPack?.quiz.length || submitQuizLoading) return;
-    const filled = studyPack.quiz.map((_, i) => quizAnswers[i]).filter((a): a is string => a != null);
+    const filled = studyPack.quiz
+      .map((_, i) => quizAnswers[i])
+      .filter((a): a is string => a != null);
     if (filled.length !== studyPack.quiz.length) return;
     setErrorMessage(null);
 
@@ -226,6 +215,86 @@ export default function Home() {
     } finally {
       setSubmitQuizLoading(false);
     }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (previewTimerRef.current !== null) {
+        clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  function previewLoading() {
+    if (previewTimerRef.current !== null) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    setStudyPack(null);
+    setFlashcardSet(null);
+    setErrorMessage(null);
+    setFlashcardError(null);
+    setFlashcardsSaved(false);
+    setLoading(true);
+    previewTimerRef.current = setTimeout(() => {
+      previewTimerRef.current = null;
+      setLoading(false);
+
+      const sampleQuiz: QuizQuestion[] = [
+        {
+          question: "Which option best describes the mitochondria?",
+          options: [
+            "They make energy for the cell",
+            "They store genetic information",
+            "They control what enters and leaves the cell",
+            "They make proteins for the cell",
+          ],
+          answer: "They make energy for the cell",
+          correctionExplanation:
+            "Mitochondria are like tiny batteries for the cell: they turn food into usable energy. " +
+            "They do not store DNA (that is mostly the nucleus), they are not the outer membrane that controls entry and exit, " +
+            "and they are not the main place where proteins are made (that is mostly ribosomes).",
+          topic: "Cellular Biology",
+        },
+      ];
+
+      setStudyPack({
+        summary: ["Summary 1", "Summary 2", "Summary 3"],
+        quiz: sampleQuiz,
+      });
+
+      setFlashcardSet({
+        flashcard_set_id: "preview-set",
+        flashcards: [
+          {
+            question: "What is the main role of mitochondria?",
+            answer: "They generate ATP, the usable energy for the cell.",
+          },
+          {
+            question: "Where is most of the cell's genetic material stored?",
+            answer: "In the nucleus.",
+          },
+          {
+            question: "Which cell structure controls what enters and leaves the cell?",
+            answer: "The cell membrane (plasma membrane).",
+          },
+          {
+            question: "Which organelles are primarily responsible for protein synthesis?",
+            answer: "Ribosomes.",
+          },
+          {
+            question: "Why are mitochondria called the 'powerhouses' of the cell?",
+            answer: "Because they convert nutrients into ATP through cellular respiration.",
+          },
+        ],
+      });
+
+      setFlashcardsSaved(false);
+      setQuizSetId(null);
+      setQuizAnswers(Array(sampleQuiz.length).fill(null));
+      setSubmitResult(null);
+    }, 3000);
   }
 
   const allQuestionsAnswered =
@@ -275,6 +344,26 @@ export default function Home() {
               {notes.length} character{notes.length !== 1 ? "s" : ""}
             </p>
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={saveFlashcardsToProfile}
+              onChange={(e) => {
+                const next = e.target.checked;
+                if (next && !user) {
+                  setFlashcardError("Sign in to save flashcards to your profile.");
+                  setSaveFlashcardsToProfile(false);
+                  return;
+                }
+                setFlashcardError(null);
+                setSaveFlashcardsToProfile(next);
+              }}
+              disabled={!user}
+              className="h-3 w-3 rounded border-input"
+            />
+            Save flashcards to profile for later review
+          </label>
 
           <div className="flex flex-col items-start gap-3">
             <button
@@ -433,7 +522,6 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
-              {/* Generate quiz button (only when quiz not yet loaded) */}
               {studyPack.quiz.length === 0 && (
                 <div className="mt-4">
                   <button
@@ -455,7 +543,7 @@ export default function Home() {
               )}
             </section>
 
-            {/* Quiz Section (only when quiz has been generated) */}
+            {/* Quiz Section */}
             {studyPack.quiz.length > 0 && (
               <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -528,6 +616,54 @@ export default function Home() {
                 )}
               </section>
             )}
+
+            {/* Flashcards Section */}
+            {flashcardSet && (
+              <section className="rounded-lg border border-border bg-card p-6">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold">Flashcards</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Flip each card to reveal the answer, then rate how well you knew it.
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={saveFlashcardsToProfile}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        if (next && !user) {
+                          setFlashcardError("Sign in to save flashcards to your profile.");
+                          setSaveFlashcardsToProfile(false);
+                          return;
+                        }
+                        setFlashcardError(null);
+                        setSaveFlashcardsToProfile(next);
+                      }}
+                      disabled={!user}
+                      className="h-3 w-3 rounded border-input"
+                    />
+                    Save to profile for later review
+                  </label>
+                </div>
+                <FlashcardGridPreview
+                  key={flashcardSet.flashcard_set_id}
+                  flashcardSet={flashcardSet}
+                  sourceLength={notes.length}
+                  userId={user?.id ?? null}
+                  savingEnabled={saveFlashcardsToProfile && !!user && flashcardsSaved}
+                />
+                {flashcardError && (
+                  <p className="mt-3 text-xs text-destructive">{flashcardError}</p>
+                )}
+                {!flashcardsSaved && saveFlashcardsToProfile && !!user && flashcardSet.flashcard_set_id !== "preview-set" && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Save is enabled, but this set was generated without being saved. Generate again to save it to your profile.
+                  </p>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>
@@ -535,9 +671,221 @@ export default function Home() {
   );
 }
 
+// ============================================
+// FLASHCARD COMPONENTS
+// ============================================
 
-// before submitting quiz: only selection is shown
-// after submitting quiz: correct/incorrect and explanation are shown
+type FlashcardGridPreviewProps = {
+  flashcardSet: FlashcardResponse;
+  sourceLength: number;
+  userId: string | null;
+  savingEnabled: boolean;
+};
+
+function FlashcardGridPreview({
+  flashcardSet,
+  sourceLength,
+  userId,
+  savingEnabled,
+}: FlashcardGridPreviewProps) {
+  const maxCards =
+    sourceLength < 800 ? 5 : sourceLength < 2000 ? 8 : Math.min(10, flashcardSet.flashcards.length);
+  const cardsToShow = flashcardSet.flashcards.slice(0, maxCards);
+
+  const [previewGamification, setPreviewGamification] =
+    useState<FlashcardSessionCompleteResponse | null>(null);
+  const [previewGamificationError, setPreviewGamificationError] = useState<string | null>(null);
+  const previewSessionCompleteRef = useRef(false);
+  const previewRatedCountRef = useRef(0);
+
+  function schedulePreviewSessionCompleteIfDone(nextSize: number) {
+    if (
+      nextSize < cardsToShow.length ||
+      !cardsToShow.length ||
+      !savingEnabled ||
+      !userId ||
+      flashcardSet.flashcard_set_id === "preview-set"
+    ) {
+      return;
+    }
+    queueMicrotask(() => {
+      if (previewSessionCompleteRef.current) return;
+      previewSessionCompleteRef.current = true;
+      setPreviewGamificationError(null);
+      submitFlashcardSessionComplete(flashcardSet.flashcard_set_id)
+        .then((res) => setPreviewGamification(res))
+        .catch((err) => {
+          previewSessionCompleteRef.current = false;
+          setPreviewGamification(null);
+          console.error("Failed to record flashcard session XP:", err);
+          setPreviewGamificationError(toUserFriendlyMessage(err));
+        });
+    });
+  }
+
+  if (!cardsToShow.length) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {cardsToShow.map((card, index) => (
+          <FlashcardPreviewCard
+            key={index}
+            card={card}
+            index={index}
+            flashcardSetId={flashcardSet.flashcard_set_id}
+            userId={userId}
+            isPreview={flashcardSet.flashcard_set_id === "preview-set"}
+            savingEnabled={savingEnabled}
+            onReviewSaved={() => {
+              previewRatedCountRef.current += 1;
+              schedulePreviewSessionCompleteIfDone(previewRatedCountRef.current);
+            }}
+          />
+        ))}
+      </div>
+      {previewGamification && !previewGamificationError && (
+        <p className="text-sm text-muted-foreground">
+          {previewGamification.applied ? (
+            <>
+              Session XP:{" "}
+              <span className="font-semibold text-foreground">
+                {previewGamification.xp_awarded}
+              </span>
+            </>
+          ) : (
+            <span>
+              Daily flashcard session XP was already counted today. Keep studying!
+            </span>
+          )}
+        </p>
+      )}
+      {previewGamificationError && (
+        <p className="text-xs text-destructive">{previewGamificationError}</p>
+      )}
+    </div>
+  );
+}
+
+type FlashcardPreviewCardProps = {
+  card: Flashcard;
+  index: number;
+  flashcardSetId: string;
+  userId: string | null;
+  isPreview?: boolean;
+  savingEnabled: boolean;
+  onReviewSaved?: () => void;
+};
+
+function FlashcardPreviewCard({
+  card,
+  index,
+  flashcardSetId,
+  userId,
+  isPreview,
+  savingEnabled,
+  onReviewSaved,
+}: FlashcardPreviewCardProps) {
+  const [flipped, setFlipped] = useState(false);
+  const [selectedRating, setSelectedRating] = useState<AnkiRating | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleRate(rating: AnkiRating) {
+    if (submitting || selectedRating || isPreview) return;
+
+    if (!userId || !savingEnabled) {
+      setSelectedRating(rating);
+      setError(
+        !userId
+          ? "Sign in from the top-right to save your flashcard progress."
+          : 'Enable "Save to profile" and regenerate to track progress and update your heatmap.',
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await submitFlashcardReview(flashcardSetId, index, rating);
+      setSelectedRating(rating);
+      onReviewSaved?.();
+    } catch (err) {
+      console.error("Failed to submit flashcard review:", err);
+      setError(toUserFriendlyMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const faceClass =
+    "absolute inset-0 flex h-full w-full flex-col justify-between rounded-lg border border-border bg-background p-4 text-left shadow-sm backface-hidden";
+
+  return (
+    <div className="group relative h-48 cursor-pointer perspective-[1000px]">
+      <div
+        className={`relative h-full w-full transition-transform duration-500 transform-3d ${
+          flipped ? "transform-[rotateY(180deg)]" : ""
+        }`}
+        onClick={() => setFlipped((f) => !f)}
+        aria-label={`Flashcard ${index + 1}`}
+      >
+        {/* Front: question */}
+        <div className={faceClass}>
+          <p className="text-xs text-muted-foreground">Question {index + 1}</p>
+          <p className="mt-2 line-clamp-5 text-sm font-medium">{card.question}</p>
+          <p className="mt-3 text-xs text-muted-foreground">Tap to reveal answer</p>
+        </div>
+
+        {/* Back: answer */}
+        <div className={`${faceClass} transform-[rotateY(180deg)] backface-hidden`}>
+          <p className="text-xs text-muted-foreground">Answer</p>
+          <p className="mt-2 line-clamp-5 text-sm">{card.answer}</p>
+          <div className="mt-3 space-y-1.5">
+            <p className="text-[11px] text-muted-foreground">How well did you know this?</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(["again", "hard", "good", "easy"] as AnkiRating[]).map((rating) => {
+                const label =
+                  rating === "again" ? "Again"
+                  : rating === "hard" ? "Hard"
+                  : rating === "good" ? "Good"
+                  : "Easy";
+                const isSelected = selectedRating === rating;
+                const colourClass =
+                  rating === "again" ? "bg-red-500/90 text-white hover:bg-red-500"
+                  : rating === "hard" ? "bg-amber-500/90 text-white hover:bg-amber-500"
+                  : rating === "good" ? "bg-green-500/90 text-white hover:bg-green-500"
+                  : "bg-blue-500/90 text-white hover:bg-blue-500";
+                return (
+                  <button
+                    key={rating}
+                    type="button"
+                    disabled={!!selectedRating || submitting}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleRate(rating);
+                    }}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                      isSelected ? "ring-2 ring-offset-2 ring-foreground " + colourClass : colourClass + " opacity-90"
+                    } disabled:opacity-60`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {error && <p className="text-[11px] text-destructive">{error}</p>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// QUIZ COMPONENTS
+// ============================================
+
 function QuestionDisplay({
   question,
   index,
@@ -564,9 +912,7 @@ function QuestionDisplay({
   const [whyWrongOpen, setWhyWrongOpen] = useState(false);
   const [whyWrongLoading, setWhyWrongLoading] = useState(false);
   const [whyWrongError, setWhyWrongError] = useState<string | null>(null);
-  const [whyWrongExplanation, setWhyWrongExplanation] = useState<string | null>(
-    null,
-  );
+  const [whyWrongExplanation, setWhyWrongExplanation] = useState<string | null>(null);
   const [followupInput, setFollowupInput] = useState("");
 
   async function handleReportSubmit(e: FormEvent) {
@@ -584,13 +930,11 @@ function QuestionDisplay({
       setReportMessage("Please wait a bit before sending another report.");
       return;
     }
-
     const description = reportText.trim();
     if (!description) {
       setReportMessage("Please add a short description of the issue.");
       return;
     }
-
     setReportSubmitting(true);
     setReportMessage(null);
     try {
@@ -618,13 +962,9 @@ function QuestionDisplay({
   }
 
   async function fetchWhyWrongExplanation(followupPrompt?: string) {
-    if (!selectedAnswer || selectedAnswer === question.answer) {
-      return;
-    }
-
+    if (!selectedAnswer || selectedAnswer === question.answer) return;
     setWhyWrongLoading(true);
     setWhyWrongError(null);
-
     try {
       const response = await requestQuizExplanation({
         question: question.question,
@@ -684,6 +1024,7 @@ function QuestionDisplay({
           );
         })}
       </div>
+
       {showAnswer && result && (
         <div className="mt-3 space-y-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
           {(result.correction_explanation ?? question.correctionExplanation) ? (
@@ -703,17 +1044,14 @@ function QuestionDisplay({
               )}
               {question.optionExplanations && (
                 <div>
-                  <p className="font-medium text-foreground">
-                    Why the other options are incorrect
-                  </p>
+                  <p className="font-medium text-foreground">Why the other options are incorrect</p>
                   <ul className="mt-1 space-y-1 text-muted-foreground">
                     {question.options
                       .filter((opt) => opt !== question.answer)
                       .map((opt) => (
                         <li key={opt}>
                           <span className="font-medium">{opt}:</span>{" "}
-                          {question.optionExplanations?.[opt] ??
-                            "Explanation not provided yet."}
+                          {question.optionExplanations?.[opt] ?? "Explanation not provided yet."}
                         </li>
                       ))}
                   </ul>
@@ -723,26 +1061,24 @@ function QuestionDisplay({
           )}
         </div>
       )}
+
       <div className="mt-3 flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-3">
-          {showAnswer &&
-            result &&
-            !result.is_correct &&
-            selectedAnswer && (
-              <button
-                type="button"
-                onClick={async () => {
-                  const nextOpen = !whyWrongOpen;
-                  setWhyWrongOpen(nextOpen);
-                  if (nextOpen && !whyWrongExplanation && !whyWrongLoading) {
-                    await fetchWhyWrongExplanation();
-                  }
-                }}
-                className="text-xs text-muted-foreground underline hover:text-foreground"
-              >
-                Why was I wrong?
-              </button>
-            )}
+          {showAnswer && result && !result.is_correct && selectedAnswer && (
+            <button
+              type="button"
+              onClick={async () => {
+                const nextOpen = !whyWrongOpen;
+                setWhyWrongOpen(nextOpen);
+                if (nextOpen && !whyWrongExplanation && !whyWrongLoading) {
+                  await fetchWhyWrongExplanation();
+                }
+              }}
+              className="text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              Why was I wrong?
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -759,15 +1095,12 @@ function QuestionDisplay({
           </button>
         </div>
       </div>
+
       {whyWrongOpen && showAnswer && result && !result.is_correct && selectedAnswer && (
         <div className="mt-2 space-y-2 rounded-md border border-border bg-card/60 p-3 text-xs">
           <p className="font-medium text-foreground">Why your answer was incorrect</p>
-          {whyWrongLoading && (
-            <p className="text-muted-foreground">Getting an explanation…</p>
-          )}
-          {whyWrongError && (
-            <p className="text-destructive">{whyWrongError}</p>
-          )}
+          {whyWrongLoading && <p className="text-muted-foreground">Getting an explanation…</p>}
+          {whyWrongError && <p className="text-destructive">{whyWrongError}</p>}
           {!whyWrongLoading && !whyWrongError && whyWrongExplanation && (
             <p className="text-muted-foreground">{whyWrongExplanation}</p>
           )}
@@ -809,6 +1142,7 @@ function QuestionDisplay({
           </div>
         </div>
       )}
+
       {reportOpen && userId && (
         <form
           onSubmit={handleReportSubmit}
@@ -845,6 +1179,7 @@ function QuestionDisplay({
           </div>
         </form>
       )}
+
       {reportMessage && (
         <p className="mt-2 text-xs text-muted-foreground">{reportMessage}</p>
       )}
