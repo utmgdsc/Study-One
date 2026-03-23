@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/context/auth-context";
 import { AppShell } from "@/components/app-shell";
+import { PageTransition } from "@/components/page-transition";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,7 +31,9 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <AuthProvider>
-          <AppShell>{children}</AppShell>
+          <AppShell>
+            <PageTransition>{children}</PageTransition>
+          </AppShell>
         </AuthProvider>
       </body>
     </html>

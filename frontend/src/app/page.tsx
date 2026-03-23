@@ -303,12 +303,25 @@ export default function Home() {
     studyPack.quiz.every((_, i) => quizAnswers[i] != null);
 
   return (
-    <main className="min-h-screen p-6 md:p-10">
-      <div className="mx-auto max-w-2xl">
-        <h1 className="mb-2 text-2xl font-semibold">Socrato</h1>
-        <p className="mb-6 text-muted-foreground">
-          Paste your study notes below to generate a summary, quiz, and flashcards.
-        </p>
+    <main className="min-h-screen">
+      <div className="mx-auto max-w-3xl px-4 py-10 md:px-6 md:py-14">
+        {/* Intro */}
+        <header className="mb-10 text-center md:text-left">
+          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Socrato</h1>
+          <p className="mt-2 text-base text-muted-foreground md:text-lg">
+            Turn your notes into summaries and practice questions—so you study smarter, not longer.
+          </p>
+        </header>
+
+        {/* Notes prompt first */}
+        <section aria-labelledby="notes-heading" className="mb-10">
+          <h2 id="notes-heading" className="mb-1 text-lg font-semibold">
+            Your notes
+          </h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Paste notes from any course. We&apos;ll generate a summary; then you can add a quiz from the
+            same text.
+          </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <label htmlFor="notes" className="sr-only">
@@ -389,24 +402,118 @@ export default function Home() {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={previewLoading}
-              disabled={loading}
-              className="text-xs text-muted-foreground underline hover:text-foreground disabled:opacity-50"
-            >
-              Preview loading (no API call)
-            </button>
+            <p className="text-xs text-muted-foreground">
+              <button
+                type="button"
+                onClick={previewLoading}
+                disabled={loading}
+                className="underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+              >
+                Try a demo preview
+              </button>{" "}
+              (no API — loads sample summary + quiz after a short delay)
+            </p>
           </div>
         </form>
+        </section>
 
+        {/* Explanation + example below the prompt */}
+        <section
+          aria-labelledby="goal-heading"
+          className="mb-10 rounded-2xl border border-border bg-card p-6 shadow-sm md:p-8"
+        >
+          <h2 id="goal-heading" className="text-lg font-semibold">
+            What we&apos;re building
+          </h2>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground md:text-[15px]">
+            Socrato is for students who already have notes but need structure: a clear recap of what
+            matters, then questions that check understanding. Paste your notes once; get material you
+            can review before exams and track over time in your profile.
+          </p>
+          <ul className="mt-5 space-y-2.5 text-sm text-muted-foreground">
+            <li className="flex gap-2">
+              <span className="text-primary" aria-hidden>
+                ·
+              </span>
+              <span>
+                <strong className="font-medium text-foreground">Summaries</strong> distill your notes into
+                scannable bullet points.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-primary" aria-hidden>
+                ·
+              </span>
+              <span>
+                <strong className="font-medium text-foreground">Quizzes</strong> with explanations help you
+                catch gaps before the test.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-primary" aria-hidden>
+                ·
+              </span>
+              <span>
+                <strong className="font-medium text-foreground">Progress</strong> (when you&apos;re signed
+                in) ties practice to XP and streaks so studying stays visible.
+              </span>
+            </li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="example-heading" className="mb-12">
+          <h2 id="example-heading" className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Example output
+          </h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Here&apos;s what a generated study pack can look like (illustrative only).
+          </p>
+          <div className="overflow-hidden rounded-2xl border border-dashed border-border/80 bg-muted/20">
+            <div className="border-b border-border/60 bg-muted/30 px-5 py-3">
+              <p className="text-xs font-medium text-muted-foreground">Summary</p>
+            </div>
+            <ul className="space-y-2 px-5 py-4 text-sm leading-relaxed text-foreground/90">
+              <li className="flex gap-2">
+                <span className="text-muted-foreground">—</span>
+                Photosynthesis converts light energy into chemical energy stored in glucose.
+              </li>
+              <li className="flex gap-2">
+                <span className="text-muted-foreground">—</span>
+                Chloroplasts are the main site of this process in plant cells.
+              </li>
+              <li className="flex gap-2">
+                <span className="text-muted-foreground">—</span>
+                Oxygen is released as a by-product when water is split.
+              </li>
+            </ul>
+            <div className="border-t border-border/60 bg-background/50 px-5 py-4">
+              <p className="text-xs font-medium text-muted-foreground">Sample question</p>
+              <p className="mt-2 text-sm font-medium text-foreground">
+                Where does the light-dependent stage of photosynthesis occur?
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {["Mitochondria", "Chloroplasts", "Nucleus", "Ribosomes"].map((opt) => (
+                  <span
+                    key={opt}
+                    className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground"
+                  >
+                    {opt}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                After you generate a real pack, you&apos;ll pick an answer and see explanations and XP.
+              </p>
+            </div>
+          </div>
+        </section>
+        
         {studyPack && !loading && (
-          <div className="mt-8 space-y-6">
-            <h1 className="mb-4 text-lg font-bold">{studyPackTitleFromNotes(notes)}</h1>
-
+          <div className="mt-12 space-y-8 border-t border-border pt-10">
+            <h2 className="text-xl font-semibold tracking-tight">Your study pack</h2>
             {/* Summary Section */}
-            <section className="rounded-lg border border-border bg-card p-6">
-              <h2 className="mb-4 text-lg font-semibold">Summary</h2>
+            <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-lg font-semibold">Summary</h3>
               <ul className="space-y-2">
                 {studyPack.summary.map((point, index) => (
                   <li key={index} className="flex gap-2 text-sm">
@@ -438,9 +545,9 @@ export default function Home() {
 
             {/* Quiz Section */}
             {studyPack.quiz.length > 0 && (
-              <section className="rounded-lg border border-border bg-card p-6">
+              <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold">Quiz</h2>
+                  <h3 className="text-lg font-semibold">Quiz</h3>
                   {!quizLoading && (
                     <div className="flex items-center gap-2">
                       <button
