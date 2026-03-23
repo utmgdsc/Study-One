@@ -210,7 +210,7 @@ export function ContributionHeatmap({
       })
       .catch(() => {
         if (!cancelled) {
-          const y = new Date().getFullYear();
+          const y = Number.isFinite(Number(range)) ? Number(range) : new Date().getFullYear();
           setData(
             makeEmptyRange(
               new Date(y, 0, 1),
