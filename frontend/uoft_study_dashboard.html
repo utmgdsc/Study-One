@@ -1,0 +1,219 @@
+
+<style>
+:root {
+  --uoft-navy: #1E3765;
+  --uoft-blue: #007FA3;
+  --uoft-navy-10: #e8ecf3;
+  --uoft-navy-15: #d4dbe9;
+  --uoft-blue-10: #e0f3f8;
+  --uoft-blue-20: #b3e2ef;
+  --uoft-gold: #E8B84B;
+  --uoft-gold-10: #fdf3dc;
+  --ease-out: cubic-bezier(0.22,1,0.36,1);
+}
+
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(14px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity:0; transform:translateX(-10px); }
+  to   { opacity:1; transform:translateX(0); }
+}
+@keyframes pulse-dot {
+  0%,100% { transform:scale(1); opacity:1; }
+  50%      { transform:scale(1.4); opacity:0.7; }
+}
+
+.dash { padding:1.5rem 0; max-width:680px; }
+
+/* staggered entry */
+.fade-1 { animation: fadeUp 0.5s var(--ease-out) 0.05s both; }
+.fade-2 { animation: fadeUp 0.5s var(--ease-out) 0.12s both; }
+.fade-3 { animation: fadeUp 0.5s var(--ease-out) 0.20s both; }
+.fade-4 { animation: fadeUp 0.5s var(--ease-out) 0.28s both; }
+.fade-5 { animation: fadeUp 0.5s var(--ease-out) 0.36s both; }
+
+/* header */
+.header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.75rem; }
+.week-badge {
+  font-size:12px; color:var(--uoft-navy); background:var(--uoft-navy-10);
+  padding:5px 14px; border-radius:99px; border:1px solid var(--uoft-navy-15);
+  font-weight:500; letter-spacing:0.02em;
+  transition: background 0.2s, transform 0.2s var(--ease-out);
+}
+.week-badge:hover { background:var(--uoft-navy-15); transform:scale(1.04); }
+
+/* stat cards */
+.stats-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:10px; }
+.stat-card {
+  border-radius:14px; padding:1.2rem 1.1rem; cursor:default;
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+  position:relative; overflow:hidden;
+}
+.stat-card:hover { transform:translateY(-3px); box-shadow: 0 8px 24px rgba(30,55,101,0.12); }
+.stat-card::after {
+  content:''; position:absolute; bottom:-18px; right:-18px;
+  width:60px; height:60px; border-radius:50%;
+  opacity:0.12; transition:transform 0.3s var(--ease-out);
+}
+.stat-card:hover::after { transform:scale(1.5); }
+
+.card-navy  { background:var(--uoft-navy-10); border:1px solid var(--uoft-navy-15); }
+.card-navy::after  { background:var(--uoft-navy); }
+.card-blue  { background:var(--uoft-blue-10); border:1px solid var(--uoft-blue-20); }
+.card-blue::after  { background:var(--uoft-blue); }
+.card-gold  { background:var(--uoft-gold-10); border:1px solid #f0d98a; }
+.card-gold::after  { background:var(--uoft-gold); }
+
+.stat-label { font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:500; margin-bottom:10px; }
+.card-navy .stat-label { color:#5a76a8; }
+.card-blue .stat-label { color:#3a8fab; }
+.card-gold .stat-label { color:#b08830; }
+
+.stat-num { font-size:2.6rem; line-height:1; font-family:Georgia,'Times New Roman',serif; font-weight:400; }
+.card-navy .stat-num { color:var(--uoft-navy); }
+.card-blue .stat-num { color:#005f7a; }
+.card-gold .stat-num { color:#8a6520; }
+
+.stat-sub { font-size:12px; margin-top:10px; display:flex; align-items:center; gap:5px; }
+.card-navy .stat-sub { color:#5a76a8; }
+.card-blue .stat-sub { color:#3a8fab; }
+.card-gold .stat-sub { color:#b08830; }
+
+.dot {
+  width:6px; height:6px; border-radius:50%; flex-shrink:0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.dot-navy { background:var(--uoft-navy); }
+.dot-blue  { background:var(--uoft-blue); }
+.dot-gold  { background:var(--uoft-gold); }
+
+/* topic card */
+.topic-card {
+  background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary);
+  border-radius:14px; padding:1.3rem 1.25rem; margin-bottom:10px;
+  transition: box-shadow 0.25s var(--ease-out);
+}
+.topic-card:hover { box-shadow: 0 4px 18px rgba(30,55,101,0.08); }
+.topic-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.4rem; }
+.section-title { font-size:13px; font-weight:500; color:var(--color-text-primary); letter-spacing:0.01em; }
+.active-pill {
+  font-size:11px; color:var(--uoft-blue); background:var(--uoft-blue-10);
+  padding:3px 10px; border-radius:99px; border:1px solid var(--uoft-blue-20);
+}
+
+.topic-row { margin-bottom:1rem; }
+.topic-row:last-child { margin-bottom:0; }
+.topic-meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; }
+.topic-name { font-size:13px; color:var(--color-text-primary); }
+.topic-right { display:flex; align-items:center; gap:8px; }
+.topic-tag { font-size:10px; padding:2px 8px; border-radius:99px; font-weight:500; }
+.tag-mastered { background:#e0f3f8; color:#005f7a; border:1px solid var(--uoft-blue-20); }
+.tag-progress { background:var(--uoft-navy-10); color:var(--uoft-navy); border:1px solid var(--uoft-navy-15); }
+.tag-needs    { background:var(--uoft-gold-10); color:#8a6520; border:1px solid #f0d98a; }
+.topic-pct { font-size:12px; color:var(--color-text-secondary); }
+
+.track { height:3px; background:var(--color-background-tertiary); border-radius:3px; overflow:hidden; }
+.bar {
+  height:3px; border-radius:3px; width:0;
+  transition: width 0.9s var(--ease-out);
+}
+.bar-blue  { background: linear-gradient(90deg, var(--uoft-blue) 0%, #00a8d4 100%); }
+.bar-navy  { background: linear-gradient(90deg, var(--uoft-navy) 0%, #2e5fad 100%); }
+.bar-gold  { background: linear-gradient(90deg, #c9922e 0%, var(--uoft-gold) 100%); }
+
+/* bottom row */
+.bottom-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.info-card {
+  background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary);
+  border-radius:14px; padding:1.1rem 1.25rem;
+  transition: transform 0.22s var(--ease-out), box-shadow 0.22s var(--ease-out);
+}
+.info-card:hover { transform:translateY(-2px); box-shadow:0 5px 16px rgba(30,55,101,0.08); }
+.info-label { font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary); margin-bottom:8px; font-weight:500; }
+.info-val { font-size:1.5rem; font-family:Georgia,'Times New Roman',serif; color:var(--color-text-primary); }
+.info-sub { font-size:11px; color:var(--color-text-tertiary); margin-top:4px; }
+</style>
+
+<div class="dash">
+
+  <div class="header fade-1">
+    <div>
+      <p style="font-size:13px;color:var(--color-text-secondary);margin:0 0 4px;">Monday, March 16 · 2026</p>
+      <h1 style="font-size:22px;font-weight:500;margin:0;">Good morning, Alex</h1>
+    </div>
+    <span class="week-badge">Week 11</span>
+  </div>
+
+  <div class="stats-grid fade-2">
+    <div class="stat-card card-navy">
+      <p class="stat-label">Points</p>
+      <p class="stat-num">2,840</p>
+      <p class="stat-sub"><span class="dot dot-navy"></span>+140 this week</p>
+    </div>
+    <div class="stat-card card-gold">
+      <p class="stat-label">Streak</p>
+      <p class="stat-num">14</p>
+      <p class="stat-sub"><span class="dot dot-gold"></span>Personal best</p>
+    </div>
+    <div class="stat-card card-blue">
+      <p class="stat-label">Quizzes</p>
+      <p class="stat-num">47</p>
+      <p class="stat-sub"><span class="dot dot-blue"></span>3 this week</p>
+    </div>
+  </div>
+
+  <div class="topic-card fade-4">
+    <div class="topic-header">
+      <span class="section-title">Topic progress</span>
+      <span class="active-pill">5 active</span>
+    </div>
+    <div id="topics"></div>
+  </div>
+
+  <div class="bottom-row fade-5">
+    <div class="info-card">
+      <p class="info-label">Study time</p>
+      <p class="info-val">12h 40m</p>
+      <p class="info-sub">This week</p>
+    </div>
+    <div class="info-card">
+      <p class="info-label">Avg. quiz score</p>
+      <p class="info-val">81%</p>
+      <p class="info-sub">Up 4% from last week</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const topics = [
+  { name:"Mathematics",  pct:78, bar:"bar-navy", tag:"tag-progress", label:"In progress" },
+  { name:"Literature",   pct:52, bar:"bar-blue",  tag:"tag-progress", label:"In progress" },
+  { name:"Physics",      pct:31, bar:"bar-gold",  tag:"tag-needs",    label:"Needs work"  },
+  { name:"Chemistry",    pct:94, bar:"bar-blue",  tag:"tag-mastered", label:"Mastered"    },
+  { name:"History",      pct:65, bar:"bar-navy",  tag:"tag-progress", label:"In progress" },
+];
+
+const container = document.getElementById('topics');
+topics.forEach(t => {
+  container.insertAdjacentHTML('beforeend', `
+    <div class="topic-row">
+      <div class="topic-meta">
+        <span class="topic-name">${t.name}</span>
+        <div class="topic-right">
+          <span class="topic-tag ${t.tag}">${t.label}</span>
+          <span class="topic-pct">${t.pct}%</span>
+        </div>
+      </div>
+      <div class="track"><div class="bar ${t.bar}" data-pct="${t.pct}"></div></div>
+    </div>`);
+});
+
+setTimeout(() => {
+  document.querySelectorAll('.bar').forEach((b,i) => {
+    setTimeout(() => { b.style.width = b.dataset.pct + '%'; }, i * 90 + 200);
+  });
+}, 300);
+</script>

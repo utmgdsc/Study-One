@@ -29,6 +29,20 @@ function startOfLocalDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/** Last day to show in the heatmap for a calendar year (no future days). */
+function heatmapEndDateForYear(year: number): Date {
+  const today = startOfLocalDay(new Date());
+  const jan1 = new Date(year, 0, 1);
+  const dec31 = new Date(year, 11, 31);
+  if (today < jan1) {
+    return jan1;
+  }
+  if (today > dec31) {
+    return dec31;
+  }
+  return today;
+}
+
 function makeEmptyRange(start: Date, end: Date): ContributionDay[] {
   const startDay = startOfLocalDay(start);
   const endDay = startOfLocalDay(end);
@@ -60,16 +74,17 @@ type CourseOption = { id: string; name: string };
 
 export function ContributionHeatmap({
   title = "Contribution heatmap",
-  subtitle = "Jan 1 – Dec 31",
   userId,
 }: {
   title?: string;
-  subtitle?: string;
   userId: string;
 }) {
   const currentYear = new Date().getFullYear();
   const [data, setData] = React.useState<ContributionDay[]>(() =>
-    makeEmptyRange(new Date(currentYear, 0, 1), new Date(currentYear, 11, 31)),
+    makeEmptyRange(
+      new Date(currentYear, 0, 1),
+      heatmapEndDateForYear(currentYear),
+    ),
   );
   const [loading, setLoading] = React.useState(true);
   const [total, setTotal] = React.useState(0);
@@ -154,7 +169,7 @@ export function ContributionHeatmap({
   const fetchHeatmapData = React.useCallback(async () => {
     const year = Number(range);
     const start = new Date(year, 0, 1);
-    const end = new Date(year, 11, 31);
+    const end = heatmapEndDateForYear(year);
     const empty = makeEmptyRange(start, end);
     const map = new Map(empty.map((d) => [d.date, { date: d.date, count: 0 }]));
 
@@ -195,8 +210,13 @@ export function ContributionHeatmap({
       })
       .catch(() => {
         if (!cancelled) {
-          const today = startOfLocalDay(new Date());
-          setData(makeEmptyRange(new Date(today.getFullYear(), 0, 1), new Date(today.getFullYear(), 11, 31)));
+          const y = new Date().getFullYear();
+          setData(
+            makeEmptyRange(
+              new Date(y, 0, 1),
+              heatmapEndDateForYear(y),
+            ),
+          );
           setTotal(0);
         }
       })
@@ -236,6 +256,23 @@ export function ContributionHeatmap({
   }, [userId, fetchHeatmapData]);
 
   // White for nothing, darker the more (level 0 = no activity, 1–4 = more).
+  const rangeSubtitle = React.useMemo(() => {
+    const y = Number(range);
+    const start = new Date(y, 0, 1);
+    const end = heatmapEndDateForYear(y);
+    const dec31 = new Date(y, 11, 31);
+    const isFullYear =
+      startOfLocalDay(end).getTime() === startOfLocalDay(dec31).getTime();
+    if (isFullYear) {
+      return `Jan 1 – Dec 31, ${y}`;
+    }
+    return `Jan 1 – ${end.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })}`;
+  }, [range]);
+
   const theme = React.useMemo(
     () => ({
       light: [
@@ -265,7 +302,7 @@ export function ContributionHeatmap({
             <CardDescription>No contributions yet</CardDescription>
           ) : (
             <CardDescription className={loading ? "opacity-70" : undefined}>
-              {`Year ${range}`} · {subtitle}
+              {`Year ${range}`} · {rangeSubtitle}
             </CardDescription>
           )}
         </div>

@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Award, Flame, Star, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { signIn, signUp, signOut, updateUserName } from "@/lib/auth";
 import { getProfile, updateProfile, getFullName, type Profile } from "@/lib/profile";
 import { ContributionHeatmap } from "@/components/profile/contribution-heatmap";
+import { StudyProgressDashboard } from "@/components/profile/study-progress-dashboard";
 import { supabase } from "@/lib/supabase";
 import { fetchContributionStats, type ContributionStats } from "@/lib/contribution-stats";
 
@@ -120,6 +122,10 @@ function BadgePopup({
   badge: BadgeDef;
   onClose: () => void;
 }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -128,38 +134,103 @@ function BadgePopup({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  return (
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  const modal = (
     <>
+      <style>{`
+        @keyframes badge-modal-enter {
+          from {
+            opacity: 0;
+            transform: perspective(1000px) rotateX(16deg) translateY(36px) scale(0.9);
+          }
+          to {
+            opacity: 1;
+            transform: perspective(1000px) rotateX(0deg) translateY(0) scale(1);
+          }
+        }
+      `}</style>
+      {/* Strong dim + blur so the glass modal pops */}
       <div
-        className="fixed inset-0 z-40 bg-black/50"
+        className="fixed inset-0 z-[200] bg-slate-950/80 backdrop-blur-md sm:backdrop-blur-lg"
         aria-hidden
         onClick={onClose}
       />
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="badge-popup-title"
-        className="fixed left-1/2 top-1/2 z-50 w-[min(90vw,320px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-4 text-card-foreground shadow-lg"
+        className="pointer-events-none fixed inset-0 z-[205] flex items-center justify-center p-4 sm:p-6"
       >
-        <div className="mx-auto mb-4 flex aspect-square w-36 items-center justify-center rounded-lg border border-dashed border-border bg-muted/50 text-muted-foreground sm:w-44">
-          <BadgePlaceholderIcon className="h-20 w-20 opacity-70 sm:h-24 sm:w-24" />
-        </div>
-        <h3 id="badge-popup-title" className="text-base font-semibold">
-          {badge.name}
-        </h3>
-        <p className="mt-2 text-sm text-muted-foreground">{badge.description}</p>
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="badge-popup-title"
+          onClick={(e) => e.stopPropagation()}
+          className="badge-modal-panel pointer-events-auto w-[min(92vw,380px)] [animation:badge-modal-enter_0.55s_cubic-bezier(0.22,1,0.36,1)_forwards] [transform-style:preserve-3d]"
+        >
+          <div
+            className={[
+              "relative overflow-hidden rounded-2xl border border-white/30",
+              "bg-card/95 backdrop-blur-xl",
+              "text-card-foreground",
+              "ring-1 ring-white/15",
+              "shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(0,0,0,0.12),0_32px_80px_rgba(0,0,0,0.65),0_0_0_1px_rgba(0,0,0,0.2)]",
+              "p-5 sm:p-6",
+            ].join(" ")}
           >
-            Close
-          </button>
+            <span
+              className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/25 via-transparent to-primary/5"
+              aria-hidden
+            />
+            <span
+              className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/20 to-transparent opacity-80"
+              aria-hidden
+            />
+            {/* “Plaque” — the badge as a floating glass object */}
+            <div className="relative mb-5 flex justify-center [perspective:600px]">
+              <div
+                className={[
+                  "relative flex aspect-square w-[min(72vw,200px)] items-center justify-center rounded-2xl",
+                  "border border-white/30 bg-gradient-to-br from-white/15 to-background/40",
+                  "backdrop-blur-md",
+                  "shadow-[inset_0_2px_0_rgba(255,255,255,0.45),inset_0_-2px_8px_rgba(0,0,0,0.2),0_12px_40px_rgba(15,23,42,0.45)]",
+                  "[transform:rotateX(8deg)_translateZ(12px)]",
+                ].join(" ")}
+              >
+                <span
+                  className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-t from-primary/15 to-transparent"
+                  aria-hidden
+                />
+                <BadgePlaceholderIcon className="relative z-10 h-[52%] w-[52%] text-primary drop-shadow-[0_4px_12px_rgba(0,0,0,0.35)]" />
+              </div>
+            </div>
+            <h3 id="badge-popup-title" className="relative text-center text-lg font-semibold tracking-tight">
+              {badge.name}
+            </h3>
+            <p className="relative mt-3 text-center text-sm leading-relaxed text-muted-foreground">
+              {badge.description}
+            </p>
+            <div className="relative mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-white/20 bg-background/50 px-5 py-2 text-sm font-medium backdrop-blur-sm transition-colors hover:bg-background/80 focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </>
   );
+
+  if (!mounted || typeof document === "undefined") return null;
+  return createPortal(modal, document.body);
 }
 
 function formatDayLabel(daysFromToday: number) {
@@ -548,9 +619,19 @@ export default function ProfilePage() {
 
     return (
       <main className="min-h-screen p-3 sm:p-6">
-        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-3 pb-6 sm:space-y-4">
-          <h1 className="text-xl font-semibold sm:text-2xl">Profile</h1>
-          <div className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
+        <div className="mx-auto w-full max-w-5xl min-w-0 space-y-8 pb-10 sm:space-y-10">
+          <header className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-semibold sm:text-2xl">Study dashboard</h1>
+              <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+                Track your points, streaks, and study progress across quizzes and flashcards.
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1 text-right text-xs text-muted-foreground sm:text-sm">
+              <span>{user.email ?? "Current student"}</span>
+            </div>
+          </header>
+          <div className="card-hover fade-in rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
             {/* Name row: full name + edit icon */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -636,53 +717,29 @@ export default function ProfilePage() {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:grid-cols-3">
-            <section className="rounded-lg border border-border bg-card p-2.5 text-card-foreground shadow-sm sm:p-4">
-              <div className="flex items-start justify-between gap-1 sm:gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground sm:text-xs">Current streak</p>
-                  <p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-2xl">
-                    {statsLoading ? "…" : stats?.currentStreak ?? 0}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground sm:text-xs">days</p>
-                </div>
-                <div className="shrink-0 rounded border border-border bg-background p-1.5 text-muted-foreground sm:p-2">
-                  <Flame className="h-3 w-3 sm:h-4 sm:w-4" />
-                </div>
-              </div>
-            </section>
-            <section className="rounded-lg border border-border bg-card p-2.5 text-card-foreground shadow-sm sm:p-4">
-              <div className="flex items-start justify-between gap-1 sm:gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground sm:text-xs">Longest streak</p>
-                  <p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-2xl">
-                    {statsLoading ? "…" : stats?.longestStreak ?? 0}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground sm:text-xs">days</p>
-                </div>
-                <div className="shrink-0 rounded border border-border bg-background p-1.5 text-muted-foreground sm:p-2">
-                  <Star className="h-3 w-3 sm:h-4 sm:w-4" />
-                </div>
-              </div>
-            </section>
-            <section className="rounded-lg border border-border bg-card p-2.5 text-card-foreground shadow-sm sm:p-4">
-              <div className="flex items-start justify-between gap-1 sm:gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground sm:text-xs">Total XP</p>
-                  <p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-2xl">
-                    {statsLoading ? "…" : (stats?.totalXp ?? 0).toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground sm:text-xs">xp</p>
-                </div>
-                <div className="shrink-0 rounded border border-border bg-background p-1.5 text-muted-foreground sm:p-2">
-                  <Award className="h-3 w-3 sm:h-4 sm:w-4" />
-                </div>
-              </div>
-            </section>
-            <section className="col-span-3 rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
+
+          <section aria-label="Progress and activity" className="space-y-5 sm:space-y-6">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Progress &amp; activity
+            </h2>
+            <StudyProgressDashboard userId={user.id} />
+            <div className="min-w-0">
+              <h3 className="mb-3 text-sm font-semibold">Contribution activity</h3>
+              <ContributionHeatmap userId={user.id} />
+            </div>
+          </section>
+
+          {/* Badges: full width, own section */}
+          <section
+            aria-label="Badges"
+            className="card-hover fade-in rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:p-5"
+          >
               <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
-                <h2 className="text-sm font-semibold">Badges</h2>
+                <h2 className="text-base font-semibold">Badges</h2>
               </div>
+              <p className="mb-3 text-[11px] text-muted-foreground sm:text-xs">
+                Tap a badge to open a detailed view.
+              </p>
               <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2 lg:grid-cols-10">
                 {BADGES.map((b) => {
                   const earned = b.earned(stats);
@@ -693,10 +750,11 @@ export default function ProfilePage() {
                       title={b.name}
                       onClick={() => setBadgePopup(b)}
                       className={[
-                        "aspect-square rounded-md border border-border shadow-sm",
+                        "aspect-square rounded-lg border border-border",
                         "flex items-center justify-center overflow-hidden",
-                        "bg-primary text-primary-foreground",
-                        "hover:opacity-90 focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring",
+                        "bg-primary text-primary-foreground shadow-sm",
+                        "transition-transform hover:scale-105 hover:opacity-95",
+                        "focus-visible:outline focus-visible:ring-2 focus-visible:ring-ring",
                       ].join(" ")}
                     >
                       <BadgePlaceholderIcon className="h-[60%] w-[60%]" />
@@ -706,7 +764,7 @@ export default function ProfilePage() {
                       key={b.name}
                       title="Badges will appear here"
                       className={[
-                        "aspect-square rounded-md border border-dashed border-border shadow-sm",
+                        "aspect-square rounded-lg border border-dashed border-border",
                         "flex items-center justify-center overflow-hidden bg-muted/30 text-muted-foreground",
                       ].join(" ")}
                     >
@@ -724,14 +782,16 @@ export default function ProfilePage() {
               <p className="mt-2 text-[11px] text-muted-foreground sm:mt-3 sm:text-xs">
                 Badges will be unlocked from quizzes, flashcards, streaks, and XP milestones.
               </p>
-            </section>
-          </div>
-          <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
-            <div className="min-w-0 pb-6 pr-2 lg:col-span-2 sm:pr-4">
-              <ContributionHeatmap userId={user.id} />
-            </div>
+          </section>
+
+          {/* History shortcuts */}
+          <section aria-label="Study history" className="space-y-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              History
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-4">
             <section className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
-              <h2 className="mb-1.5 text-sm font-semibold sm:mb-2">Past quizzes</h2>
+              <h3 className="mb-1.5 text-sm font-semibold sm:mb-2">Past quizzes</h3>
               <p className="mb-3 text-xs text-muted-foreground">
                 View all your previous quiz attempts.
               </p>
@@ -744,7 +804,7 @@ export default function ProfilePage() {
               </button>
             </section>
             <section className="rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm sm:p-4">
-              <h2 className="mb-1.5 text-sm font-semibold sm:mb-2">Past flashcards</h2>
+              <h3 className="mb-1.5 text-sm font-semibold sm:mb-2">Past flashcards</h3>
               <p className="mb-3 text-xs text-muted-foreground">
                 View all your flashcard decks and sessions.
               </p>
@@ -756,7 +816,8 @@ export default function ProfilePage() {
                 View all
               </button>
             </section>
-          </div>
+            </div>
+          </section>
           <FullScreenModal
             open={pastQuizzesViewAllOpen}
             title="All past quizzes"
